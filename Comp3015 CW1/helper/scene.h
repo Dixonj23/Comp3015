@@ -13,6 +13,7 @@ public:
 
 	Scene() : m_animate(true), width(800), height(600) { }
 	virtual ~Scene() {}
+    virtual void keyInput(int key, int action) {}
 
 	void setDimensions( int w, int h ) {
 	    width = w;

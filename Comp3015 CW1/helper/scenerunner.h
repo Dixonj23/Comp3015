@@ -128,6 +128,20 @@ private:
 			int state = glfwGetKey(window, GLFW_KEY_SPACE);
 			if (state == GLFW_PRESS)
 				scene.animate(!scene.animating());
+
+            //inputs
+            auto sendKey = [&](int key) {
+                int state = glfwGetKey(window, key);
+                if (state == GLFW_PRESS) scene.keyInput(key, GLFW_PRESS);
+                else scene.keyInput(key, GLFW_RELEASE);
+                };
+
+            sendKey(GLFW_KEY_W);
+            sendKey(GLFW_KEY_A);
+            sendKey(GLFW_KEY_S);
+            sendKey(GLFW_KEY_D);
+            sendKey(GLFW_KEY_Q);
+            sendKey(GLFW_KEY_E);
         }
     }
 };

@@ -25,7 +25,7 @@ private:
     Teapot teapot;
     //GLuint brick, moss;
     //Cube cube;
-    //std::unique_ptr<ObjMesh> mesh;
+    std::unique_ptr<ObjMesh> mesh;
     SkyBox sky;
     std::unique_ptr<ObjMesh> spot;
     GLuint fboHandle;
@@ -33,8 +33,16 @@ private:
     float rotSpeed;
     float tPrev;
     float angle;
-    
 
+    bool keyW = false, keyA = false, keyS = false, keyD = false, keyQ = false, keyE = false;
+
+    glm::vec3 camPos = glm::vec3(0.0f, 2.0f, 7.0f);
+    float camSpeed = 4.0f;
+    float camAngle;
+    float camRadius;
+    float camHeight;
+
+    void keyInput(int key, int action) override;
     void compile();
     void setMatrices();
 

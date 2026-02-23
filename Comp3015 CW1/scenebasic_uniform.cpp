@@ -8,6 +8,9 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <GLFW/glfw3.h>
+extern GLFWwindow* window;
+
 #include <string>
 using std::string;
 
@@ -28,14 +31,30 @@ using glm::mat3;
 using glm::mat4;
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
-    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f),
+    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f), camAngle(4.7f), camRadius(-2.5), camHeight(2.5),
     //sky(100.0f),
     plane(100.0f, 100.0f, 1, 1),
     teapot(14, glm::mat4(1.0f)),
     torus(1.75f * 0.75, 0.75f * 0.75, 50, 50)
     {
+        mesh = ObjMesh::load("media/bs_ears.obj", false, true);
     }
 
+void SceneBasic_Uniform::keyInput(int key, int action)
+{
+    bool down = (action == GLFW_PRESS);
+
+    switch (key)
+    {
+    case GLFW_KEY_W: keyW = down; break;
+    case GLFW_KEY_A: keyA = down; break;
+    case GLFW_KEY_S: keyS = down; break;
+    case GLFW_KEY_D: keyD = down; break;
+    case GLFW_KEY_Q: keyQ = down; break;
+    case GLFW_KEY_E: keyE = down; break;
+    default: break;
+    }
+}
 
 void SceneBasic_Uniform::initScene()
 {
@@ -43,16 +62,21 @@ void SceneBasic_Uniform::initScene()
     glEnable(GL_DEPTH_TEST);
     model = mat4(1.0f);
     projection = mat4(1.0f);
+    angle = 0.0f;
     
     
 
-    GLuint brick = Texture::loadTexture("media/texture/brick1.jpg");
-    GLuint moss = Texture::loadTexture("media/texture/moss.png");
+    GLuint brick = Texture::loadTexture("media/texture/ogre_diffuse.png");
+    GLuint moss = Texture::loadTexture("media/texture/ogre_diffuse.png");
+    GLuint normalTex = Texture::loadTexture("media/texture/ogre_normalmap.png");
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, brick);
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, moss);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, normalTex);
 
     //setupFBO();
 
@@ -83,27 +107,41 @@ void SceneBasic_Uniform::update(float t)
     tPrev = t;
     angle += rotSpeed * deltaT;
 
-    if (this->m_animate) {
-        angle += rotSpeed * deltaT;
-        if (angle > glm::two_pi<float>()) angle -= glm::two_pi<float>();
-    }
+    //camera movement
+    if (keyA) camAngle -= 1.5f * deltaT;
+    if (keyD) camAngle += 1.5f * deltaT;
+
+    if (keyW) camRadius -= 3.0f * deltaT;
+    if (keyS) camRadius += 3.0f * deltaT;
+
+    if (keyQ) camHeight -= 3.0f * deltaT;
+    if (keyE) camHeight += 3.0f * deltaT;
+
+    //printf("%.1f \n", camAngle);
+    //printf("%.1f \n", camRadius);
+    //printf("%.1f \n", camHeight);
 }
 
-void setLights(GLSLProgram& prog, const glm::mat4& view)
+void setLights(GLSLProgram& prog, const glm::mat4& view, float angle)
 {
     glm::vec4 lightPos[3] = {
-        glm::vec4(-3.0f, 2.0f,  3.0f, 1.0f),
-        glm::vec4(3.0f, 2.0f,  3.0f, 1.0f),
-        glm::vec4(0.0f, 2.0f, -3.0f, 1.0f)
+        glm::vec4(-5.0f, 1.0f,  5.0f, 1.0f),
+        glm::vec4(5.0f, 1.0f,  5.0f, 1.0f),
+        glm::vec4(0.0f, 1.0f, -7.0f, 1.0f)
     };
 
+    glm::vec3 colours[3] = {
+        glm::vec3(1.0f, 0.2f, 0.2f),  // red-ish
+        glm::vec3(0.2f, 1.0f, 0.2f),  // green-ish
+        glm::vec3(0.2f, 0.2f, 1.0f)   // blue-ish
+    };
 
     for (int i = 0; i < 3; i++)
     {
         std::stringstream name;
         glm::vec4 posEye = view * lightPos[i];
 
-
+        
         // position
         name << "Lights[" << i << "].Position";
         prog.setUniform(name.str().c_str(), posEye);
@@ -111,33 +149,37 @@ void setLights(GLSLProgram& prog, const glm::mat4& view)
 
         // direction (towards origin)
         // world target
-        glm::vec4 targetWorld(0.0f, 0.0f, 0.0f, 1.0f);
+        glm::vec4 targetWorld(0.0f, 2.0f, 0.0f, 1.0f);
 
         // convert target into eye space
         glm::vec3 targetEye = glm::vec3(view * targetWorld);
 
         // correct direction: from light to target
-        glm::vec3 dirEye = glm::normalize(targetEye - glm::vec3(posEye));
+        glm::vec3 dirEye = glm::normalize( targetEye - glm::vec3(posEye));
         name << "Lights[" << i << "].Direction";
         prog.setUniform(name.str().c_str(), dirEye);
         name.str(""); name.clear();
 
-        // colour
+        // ambient colour
         name << "Lights[" << i << "].La";
-        prog.setUniform(name.str().c_str(), glm::vec3(0.1f));
+        prog.setUniform(name.str().c_str(), glm::vec3(0.05f));
         name.str(""); name.clear();
 
+        //light colour
         name << "Lights[" << i << "].L";
-        prog.setUniform(name.str().c_str(), glm::vec3(1.0f));
+        //prog.setUniform(name.str().c_str(), glm::vec3(1.0f));
+        prog.setUniform(name.str().c_str(), colours[i]);
         name.str(""); name.clear();
+        
+        
 
         // spotlight params
         name << "Lights[" << i << "].Cutoff";
-        prog.setUniform(name.str().c_str(), cos(glm::radians(20.0f)));
+        prog.setUniform(name.str().c_str(), cos(glm::radians(5.0f)));
         name.str(""); name.clear();
 
         name << "Lights[" << i << "].Exponent";
-        prog.setUniform(name.str().c_str(), 10.0f);
+        prog.setUniform(name.str().c_str(), 0.5f);
     }
 }
 
@@ -151,25 +193,33 @@ void SceneBasic_Uniform::renderScene() {
     prog.setUniform("RenderTex", 0);
     glViewport(0, 0, width, height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    float radius = 6.0f;
-    float height = 2.5f;
 
-    vec3 cameraPos = vec3(
-        radius * cos(angle),
-        height,
-        radius * sin(angle)
-    );
+    camPos.x = camRadius * cos(camAngle);
+    camPos.z = camRadius * sin(camAngle);
+    camPos.y = camHeight;
 
     view = glm::lookAt(
-        cameraPos,
-        vec3(0.0f, 0.75f, 0.0f),   
-        vec3(0.0f, 1.0f, 0.0f)
+        camPos,
+        glm::vec3(0.0f, 2.0f, 0.0f),   // statue center
+        glm::vec3(0.0f, 1.0f, 0.0f)
     );
    
     //vec4 lightPos = vec4(10.0f * cos(angle), 10.0f, 10.0f * sin(angle), 1.0f);
-    setLights(prog, view);
+    setLights(prog, view, angle);
+
+    //Render Mesh
+    prog.setUniform("Material.Kd", vec3(0.4f, 0.4f, 0.4f));
+    prog.setUniform("Material.Ks", vec3(0.5f, 0.5f, 0.5f));
+    prog.setUniform("Material.Ka", vec3(0.9f ,0.9f, 0.9f));
+    prog.setUniform("Material.Shininess", 100.0f);
+
+    model = mat4(1.0f);
+    model = glm::scale(glm::translate(model, vec3(0.0f, 2.0f, 0.0f)), vec3(2.0f));
+    setMatrices();
+    mesh->render();
 
     //Render Teapot
+    /*
     prog.setUniform("Material.Kd", vec3(0.2f, 0.55f, 0.9f));
     prog.setUniform("Material.Ks", vec3(0.95f, 0.95f, 0.95f));
     prog.setUniform("Material.Ka", vec3(0.2f * 0.3f, 0.55f * 0.3f, 0.9f * 0.3f));
@@ -181,8 +231,10 @@ void SceneBasic_Uniform::renderScene() {
     model = glm::rotate(model, glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
     setMatrices();
     teapot.render();
+    */
 
     //Render Torus
+    /*
     prog.setUniform("Material.Kd", vec3(0.2f, 0.55f, 0.9f));
     prog.setUniform("Material.Ks", vec3(0.95f, 0.95f, 0.95f));
     prog.setUniform("Material.Ka", vec3(0.2f * 0.3f, 0.55f * 0.3f, 0.9f * 0.3f));
@@ -193,8 +245,10 @@ void SceneBasic_Uniform::renderScene() {
     model = glm::rotate(model, glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
     setMatrices();
     torus.render();
+    */
 
     //Render Plane
+    
     prog.setUniform("Material.Kd", vec3(0.7f, 0.7f, 0.7f));
     prog.setUniform("Material.Ks", vec3(0.95f, 0.95f, 0.95f));
     prog.setUniform("Material.Ka", vec3(0.2f, 0.2f, 0.2f));
@@ -203,6 +257,7 @@ void SceneBasic_Uniform::renderScene() {
     model = mat4(1.0f);
     setMatrices();
     plane.render();
+    
     
 
     //Render Cube
@@ -267,3 +322,5 @@ void SceneBasic_Uniform::setupFBO() {
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+
