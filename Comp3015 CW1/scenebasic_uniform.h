@@ -34,7 +34,10 @@ private:
     float tPrev;
     float angle;
 
-    bool keyW = false, keyA = false, keyS = false, keyD = false, keyQ = false, keyE = false;
+    bool lightViewMode = false;
+
+    //Camera controls
+    bool keyW = false, keyA = false, keyS = false, keyD = false, keyQ = false, keyE = false, keyC = false, key1 = false, key2 = false, key3 = false;
 
     glm::vec3 camPos = glm::vec3(0.0f, 2.0f, 7.0f);
     float camSpeed = 4.0f;
@@ -42,7 +45,26 @@ private:
     float camRadius;
     float camHeight;
 
+
+    //Light controls
+    int activeLight = 0;
+    glm::vec3 lightPositions[3] = {
+        glm::vec3(0.0f, 1.0f,  6.0f),
+        glm::vec3(5.0f, 1.0f,  -6.0f),
+        glm::vec3(-5.0f, 1.0f, -6.0f)
+    };
+
+    glm::vec3 lightDirections[3] = {
+        glm::normalize(glm::vec3(0.0f, 2.0f, 0.0f) - lightPositions[0]),
+        glm::normalize(glm::vec3(0.0f, 2.0f, 0.0f) - lightPositions[1]),
+        glm::normalize(glm::vec3(0.0f, 2.0f, 0.0f) - lightPositions[2])
+    };
+
+    float lightYaw[3] = { 0,0,0 };
+    float lightPitch[3] = { 0,0,0 };
+
     void keyInput(int key, int action) override;
+    void setLights();
     void compile();
     void setMatrices();
 

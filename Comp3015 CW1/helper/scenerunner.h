@@ -142,6 +142,10 @@ private:
             sendKey(GLFW_KEY_D);
             sendKey(GLFW_KEY_Q);
             sendKey(GLFW_KEY_E);
+            sendKey(GLFW_KEY_C);
+            sendKey(GLFW_KEY_1);
+            sendKey(GLFW_KEY_2);
+            sendKey(GLFW_KEY_3);
         }
     }
 };

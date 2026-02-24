@@ -30,8 +30,9 @@ using glm::vec4;
 using glm::mat3;
 using glm::mat4;
 
+
 SceneBasic_Uniform::SceneBasic_Uniform() :
-    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f), camAngle(4.7f), camRadius(-2.5), camHeight(2.5),
+    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f), camAngle(4.7f), camRadius(-3.8), camHeight(2.5),
     //sky(100.0f),
     plane(100.0f, 100.0f, 1, 1),
     teapot(14, glm::mat4(1.0f)),
@@ -39,6 +40,10 @@ SceneBasic_Uniform::SceneBasic_Uniform() :
     {
         mesh = ObjMesh::load("media/bs_ears.obj", false, true);
     }
+
+
+bool cPressedLastFrame = false;
+float baseYaw[3];
 
 void SceneBasic_Uniform::keyInput(int key, int action)
 {
@@ -52,6 +57,22 @@ void SceneBasic_Uniform::keyInput(int key, int action)
     case GLFW_KEY_D: keyD = down; break;
     case GLFW_KEY_Q: keyQ = down; break;
     case GLFW_KEY_E: keyE = down; break;
+
+    case GLFW_KEY_1: key1 = down; break;
+    case GLFW_KEY_2: key2 = down; break;
+    case GLFW_KEY_3: key3 = down; break;
+
+    case GLFW_KEY_C: if (action == GLFW_PRESS && !cPressedLastFrame)
+        {
+            lightViewMode = !lightViewMode;
+            cPressedLastFrame = true;
+        }
+
+        if (action == GLFW_RELEASE)
+        {
+            cPressedLastFrame = false;
+        }
+        break;
     default: break;
     }
 }
@@ -64,8 +85,6 @@ void SceneBasic_Uniform::initScene()
     projection = mat4(1.0f);
     angle = 0.0f;
     
-    
-
     GLuint brick = Texture::loadTexture("media/texture/ogre_diffuse.png");
     GLuint moss = Texture::loadTexture("media/texture/ogre_diffuse.png");
     GLuint normalTex = Texture::loadTexture("media/texture/ogre_normalmap.png");
@@ -79,10 +98,27 @@ void SceneBasic_Uniform::initScene()
     glBindTexture(GL_TEXTURE_2D, normalTex);
 
     //setupFBO();
-
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
+
+    // Initialise light directions to point at statue
+    glm::vec3 target(0.0f, 2.0f, 0.0f); // center of statue
+
+    for (int i = 0; i < 3; i++)
+    {
+        glm::vec3 dir = glm::normalize(target - lightPositions[i]);
+
+        // Calculate pitch
+        lightPitch[i] = asin(dir.y);
+
+        // Calculate yaw
+        lightYaw[i] = atan2(dir.x, dir.z);
+        baseYaw[i] = lightYaw[i];
+
+        // Store direction
+        lightDirections[i] = dir;
+    }
 }
 
 void SceneBasic_Uniform::compile()
@@ -108,28 +144,61 @@ void SceneBasic_Uniform::update(float t)
     angle += rotSpeed * deltaT;
 
     //camera movement
-    if (keyA) camAngle -= 1.5f * deltaT;
-    if (keyD) camAngle += 1.5f * deltaT;
+    if (!lightViewMode) {
+        if (keyA) camAngle -= 1.5f * deltaT;
+        if (keyD) camAngle += 1.5f * deltaT;
 
-    if (keyW) camRadius -= 3.0f * deltaT;
-    if (keyS) camRadius += 3.0f * deltaT;
+        if (keyW) camRadius -= 3.0f * deltaT;
+        if (keyS) camRadius += 3.0f * deltaT;
 
-    if (keyQ) camHeight -= 3.0f * deltaT;
-    if (keyE) camHeight += 3.0f * deltaT;
+        if (keyQ) camHeight -= 3.0f * deltaT;
+        if (keyE) camHeight += 3.0f * deltaT;
 
-    //printf("%.1f \n", camAngle);
-    //printf("%.1f \n", camRadius);
-    //printf("%.1f \n", camHeight);
+
+        //printf("%.1f \n", camAngle);
+        //printf("%.1f \n", camRadius);
+        //printf("%.1f \n", camHeight);
+    }
+    if (lightViewMode) {
+        //spotlight control
+        float rotSpeed = 1.5f;
+
+        if (keyW) lightPitch[activeLight] += rotSpeed * deltaT;
+        if (keyS) lightPitch[activeLight] -= rotSpeed * deltaT;
+        if (keyA) lightYaw[activeLight] += rotSpeed * deltaT;
+        if (keyD) lightYaw[activeLight] -= rotSpeed * deltaT;
+
+        if (key1) activeLight = 0;
+        if (key2) activeLight = 1;
+        if (key3) activeLight = 2;
+
+
+        for (int i = 0; i < 3; i++)
+        {
+            glm::vec3 dir;
+            dir.x = cos(lightPitch[i]) * sin(lightYaw[i]);
+            dir.y = sin(lightPitch[i]);
+            dir.z = cos(lightPitch[i]) * cos(lightYaw[i]);
+
+            lightPitch[activeLight] = glm::clamp(lightPitch[activeLight],
+                -glm::radians(60.0f),
+                glm::radians(60.0f));
+
+            float yawLimit = glm::radians(60.0f);
+
+            lightYaw[activeLight] = glm::clamp(
+                lightYaw[activeLight],
+                baseYaw[activeLight] - yawLimit,
+                baseYaw[activeLight] + yawLimit
+            );
+
+            lightDirections[i] = glm::normalize(dir);
+        }
+    }
 }
 
-void setLights(GLSLProgram& prog, const glm::mat4& view, float angle)
+void SceneBasic_Uniform::setLights()
 {
-    glm::vec4 lightPos[3] = {
-        glm::vec4(-5.0f, 1.0f,  5.0f, 1.0f),
-        glm::vec4(5.0f, 1.0f,  5.0f, 1.0f),
-        glm::vec4(0.0f, 1.0f, -7.0f, 1.0f)
-    };
-
     glm::vec3 colours[3] = {
         glm::vec3(1.0f, 0.2f, 0.2f),  // red-ish
         glm::vec3(0.2f, 1.0f, 0.2f),  // green-ish
@@ -138,24 +207,17 @@ void setLights(GLSLProgram& prog, const glm::mat4& view, float angle)
 
     for (int i = 0; i < 3; i++)
     {
-        std::stringstream name;
-        glm::vec4 posEye = view * lightPos[i];
+        glm::vec4 posEye = view * glm::vec4(lightPositions[i], 1.0f);
+        glm::vec3 dirEye = glm::normalize(glm::mat3(view) * lightDirections[i]);
 
-        
-        // position
+        std::stringstream name;
+
+        // Position
         name << "Lights[" << i << "].Position";
         prog.setUniform(name.str().c_str(), posEye);
         name.str(""); name.clear();
 
-        // direction (towards origin)
-        // world target
-        glm::vec4 targetWorld(0.0f, 2.0f, 0.0f, 1.0f);
-
-        // convert target into eye space
-        glm::vec3 targetEye = glm::vec3(view * targetWorld);
-
-        // correct direction: from light to target
-        glm::vec3 dirEye = glm::normalize( targetEye - glm::vec3(posEye));
+        // Direction
         name << "Lights[" << i << "].Direction";
         prog.setUniform(name.str().c_str(), dirEye);
         name.str(""); name.clear();
@@ -170,8 +232,6 @@ void setLights(GLSLProgram& prog, const glm::mat4& view, float angle)
         //prog.setUniform(name.str().c_str(), glm::vec3(1.0f));
         prog.setUniform(name.str().c_str(), colours[i]);
         name.str(""); name.clear();
-        
-        
 
         // spotlight params
         name << "Lights[" << i << "].Cutoff";
@@ -179,7 +239,15 @@ void setLights(GLSLProgram& prog, const glm::mat4& view, float angle)
         name.str(""); name.clear();
 
         name << "Lights[" << i << "].Exponent";
-        prog.setUniform(name.str().c_str(), 0.5f);
+        prog.setUniform(name.str().c_str(), 45.0f);
+
+        //selected light brighter
+        if (i == activeLight)
+            prog.setUniform(("Lights[" + std::to_string(i) + "].L").c_str(),
+                glm::vec3(1.5f));
+        else
+            prog.setUniform(("Lights[" + std::to_string(i) + "].L").c_str(),
+                colours[i]);
     }
 }
 
@@ -194,18 +262,36 @@ void SceneBasic_Uniform::renderScene() {
     glViewport(0, 0, width, height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    camPos.x = camRadius * cos(camAngle);
-    camPos.z = camRadius * sin(camAngle);
-    camPos.y = camHeight;
+    if (lightViewMode)
+    {
+        // Camera sits at active light
+        glm::vec3 eye = lightPositions[activeLight] + glm::vec3(0.0f, 0.2f, 0.0f);
 
-    view = glm::lookAt(
-        camPos,
-        glm::vec3(0.0f, 2.0f, 0.0f),   // statue center
-        glm::vec3(0.0f, 1.0f, 0.0f)
-    );
+        // Look in spotlight direction
+        glm::vec3 center = eye + lightDirections[activeLight];
+
+        view = glm::lookAt(
+            eye,
+            center,
+            glm::vec3(0.0f, 1.0f, 0.0f)
+        );
+    }
+    else
+    {
+        // Normal orbit camera
+        camPos.x = camRadius * cos(camAngle);
+        camPos.z = camRadius * sin(camAngle);
+        camPos.y = camHeight;
+
+        view = glm::lookAt(
+            camPos,
+            glm::vec3(0.0f, 2.0f, 0.0f),
+            glm::vec3(0.0f, 1.0f, 0.0f)
+        );
+    }
    
     //vec4 lightPos = vec4(10.0f * cos(angle), 10.0f, 10.0f * sin(angle), 1.0f);
-    setLights(prog, view, angle);
+    setLights();
 
     //Render Mesh
     prog.setUniform("Material.Kd", vec3(0.4f, 0.4f, 0.4f));
@@ -279,8 +365,10 @@ void SceneBasic_Uniform::resize(int w, int h)
     width = w;
     height = h;
 
-
-    projection = glm::perspective(glm::radians(70.0f), (float)w / h, 0.3f, 100.0f);
+    if (lightViewMode)
+        projection = glm::perspective(glm::radians(60.0f), (float)w / h, 0.3f, 100.0f);
+    else
+        projection = glm::perspective(glm::radians(70.0f), (float)w / h, 0.3f, 100.0f);
 }
 
 void SceneBasic_Uniform::setMatrices() {

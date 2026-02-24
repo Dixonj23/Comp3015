@@ -50,7 +50,10 @@ vec3 blinnPhongLight(int i, vec3 n, vec3 texColor)
     // spotlight factor
     float cosAng = dot(normalize(-s), normalize(Lights[i].Direction));
     float spot = 0.0;
-    if (cosAng > Lights[i].Cutoff) spot = pow(cosAng, Lights[i].Exponent);
+    float inner = Lights[i].Cutoff;
+    float outer = inner - 0.05; // soft edge width
+    float intensity = clamp((cosAng - outer) / (inner - outer), 0.0, 1.0);
+    if (cosAng > Lights[i].Cutoff) spot = pow(intensity, Lights[i].Exponent);
 
     return ambient + spot * (diffuse + spec) * Lights[i].L;
 }
@@ -70,6 +73,15 @@ void main()
     vec3 color = vec3(0.0);
     for (int i = 0; i < NUM_LIGHTS; i++)
         color += blinnPhongLight(i, n, texColor);
+
+    //fog
+    float dist = length(Position);
+    float fogFactor = exp(-0.08 * dist);
+    fogFactor = clamp(fogFactor, 0.0, 1.0);
+
+    vec3 fogColor = vec3(0.02, 0.02, 0.03); // dark blue/grey
+
+    color = mix(fogColor, color, fogFactor);
 
     FragColor = vec4(color, 1.0);
 }
