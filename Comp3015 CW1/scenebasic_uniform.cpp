@@ -32,13 +32,12 @@ using glm::mat4;
 
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
-    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f), camAngle(4.7f), camRadius(-3.8), camHeight(2.5),
+    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f), camAngle(4.7f), camRadius(-5.0f), camHeight(3.5f),
     //sky(100.0f),
-    plane(100.0f, 100.0f, 1, 1),
-    teapot(14, glm::mat4(1.0f)),
-    torus(1.75f * 0.75, 0.75f * 0.75, 50, 50)
+    plane(100.0f, 100.0f, 1, 1)
     {
         mesh = ObjMesh::load("media/bs_ears.obj", false, true);
+        pillar = ObjMesh::load("media/pillar/pillar.obj", false);
     }
 
 
@@ -85,22 +84,29 @@ void SceneBasic_Uniform::initScene()
     projection = mat4(1.0f);
     angle = 0.0f;
     
-    GLuint brick = Texture::loadTexture("media/texture/ogre_diffuse.png");
-    GLuint moss = Texture::loadTexture("media/texture/ogre_diffuse.png");
-    GLuint normalTex = Texture::loadTexture("media/texture/ogre_normalmap.png");
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, brick);
+    // Plane Textures
+    planeTex1 = Texture::loadTexture("media/texture/brick1.jpg");
+    planeTex2 = Texture::loadTexture("media/texture/moss.png");
+    planeNormal = Texture::loadTexture("media/texture/ogre_normalmap.png");
 
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, moss);
+    // Statue Textures
+    statueTex1 = Texture::loadTexture("media/texture/ogre_diffuse.png");
+    statueTex2 = Texture::loadTexture("media/texture/ogre_diffuse.png");
+    statueNormal = Texture::loadTexture("media/texture/ogre_normalmap.png");
 
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, normalTex);
+    // Pillar Textures
+    pillarTex1 = Texture::loadTexture("media/pillar/pillar_large_MAT_BaseColor.jpg");
+    pillarTex2 = Texture::loadTexture("media/pillar/pillar_large_MAT_BaseColor.jpg");
+    pillarNormal = Texture::loadTexture("media/pillar/pillar_large_MAT_Normal.jpg");
 
     //setupFBO();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
+    //Fog
+    prog.setUniform("Fog.Color", glm::vec3(0.02f, 0.02f, 0.03f));
+    prog.setUniform("Fog.MaxDist", 20.0f);
+    prog.setUniform("Fog.MinDist", 1.0f);
 
     // Initialise light directions to point at statue
     glm::vec3 target(0.0f, 2.0f, 0.0f); // center of statue
@@ -260,7 +266,12 @@ void SceneBasic_Uniform::render() {
 void SceneBasic_Uniform::renderScene() {
     prog.setUniform("RenderTex", 0);
     glViewport(0, 0, width, height);
+
+    glm::vec3 fogCol(0.005f, 0.005f, 0.01f);
+    glClearColor(fogCol.r, fogCol.g, fogCol.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
 
     if (lightViewMode)
     {
@@ -293,6 +304,16 @@ void SceneBasic_Uniform::renderScene() {
     //vec4 lightPos = vec4(10.0f * cos(angle), 10.0f, 10.0f * sin(angle), 1.0f);
     setLights();
 
+    //bind statue textures
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, statueTex1);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, statueTex2);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, statueNormal);
+
     //Render Mesh
     prog.setUniform("Material.Kd", vec3(0.4f, 0.4f, 0.4f));
     prog.setUniform("Material.Ks", vec3(0.5f, 0.5f, 0.5f));
@@ -300,41 +321,45 @@ void SceneBasic_Uniform::renderScene() {
     prog.setUniform("Material.Shininess", 100.0f);
 
     model = mat4(1.0f);
-    model = glm::scale(glm::translate(model, vec3(0.0f, 2.0f, 0.0f)), vec3(2.0f));
+    model = glm::scale(glm::translate(model, vec3(0.0f, 4.0f, 0.0f)), vec3(2.0f));
+    //model = glm::rotate(model, glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
     setMatrices();
     mesh->render();
 
-    //Render Teapot
-    /*
-    prog.setUniform("Material.Kd", vec3(0.2f, 0.55f, 0.9f));
-    prog.setUniform("Material.Ks", vec3(0.95f, 0.95f, 0.95f));
-    prog.setUniform("Material.Ka", vec3(0.2f * 0.3f, 0.55f * 0.3f, 0.9f * 0.3f));
+
+    // bind pillar textures
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, pillarTex1);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, pillarTex2);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, pillarNormal);
+
+    //Render Pillar
+    prog.setUniform("Material.Kd", vec3(0.4f, 0.4f, 0.4f));
+    prog.setUniform("Material.Ks", vec3(0.5f, 0.5f, 0.5f));
+    prog.setUniform("Material.Ka", vec3(0.9f, 0.9f, 0.9f));
     prog.setUniform("Material.Shininess", 100.0f);
 
     model = mat4(1.0f);
-    glm::translate(model, vec3(0.0f, 0.0f, -2.0f));
-    model = glm::rotate(model, glm::radians(45.0f), vec3(0.0f, 1.0f, 0.0f));
-    model = glm::rotate(model, glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
+    model = glm::scale(glm::translate(model, vec3(0.0f, -0.5f, 0.0f)), vec3(0.0008f, 0.0005f, 0.0008f));
     setMatrices();
-    teapot.render();
-    */
+    pillar->render();
 
-    //Render Torus
-    /*
-    prog.setUniform("Material.Kd", vec3(0.2f, 0.55f, 0.9f));
-    prog.setUniform("Material.Ks", vec3(0.95f, 0.95f, 0.95f));
-    prog.setUniform("Material.Ka", vec3(0.2f * 0.3f, 0.55f * 0.3f, 0.9f * 0.3f));
-    prog.setUniform("Material.Shininess", 100.0f);
 
-    model = mat4(1.0f);
-    glm::translate(model, vec3(-1.0f, 0.75f, 3.0f));
-    model = glm::rotate(model, glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
-    setMatrices();
-    torus.render();
-    */
+    //bind plane textures
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, planeTex1);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, planeTex2);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, planeNormal);
 
     //Render Plane
-    
     prog.setUniform("Material.Kd", vec3(0.7f, 0.7f, 0.7f));
     prog.setUniform("Material.Ks", vec3(0.95f, 0.95f, 0.95f));
     prog.setUniform("Material.Ka", vec3(0.2f, 0.2f, 0.2f));
@@ -345,18 +370,6 @@ void SceneBasic_Uniform::renderScene() {
     plane.render();
     
     
-
-    //Render Cube
-    /*
-    //prog.setUniform("Material.Kd", vec3(0.2f, 0.55f, 0.9f));
-    prog.setUniform("Material.Ks", vec3(0.0f, 0.0f, 0.0f));
-    //prog.setUniform("Material.Ka", vec3(0.2f * 0.3f, 0.55f * 0.3f, 0.9f * 0.3f));
-    prog.setUniform("Material.Shininess", 1.0f);
-
-    model = mat4(1.0f);
-    setMatrices();
-    cube.render();
-    */
 }
 
 void SceneBasic_Uniform::resize(int w, int h)
@@ -375,7 +388,9 @@ void SceneBasic_Uniform::setMatrices() {
     glm::mat4 mv = view * model;
     prog.setUniform("ModelMatrix", model);
     prog.setUniform("ModelViewMatrix", mv);
-    prog.setUniform("NormalMatrix", glm::mat3(vec3(mv[0]), vec3(mv[1]), vec3(mv[2])));
+
+    glm::mat3 normalMat = glm::mat3(glm::transpose(glm::inverse(mv)));
+    prog.setUniform("NormalMatrix", normalMat);
 
     prog.setUniform("MVP", projection * mv);
 }

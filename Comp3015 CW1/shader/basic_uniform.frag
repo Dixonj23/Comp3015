@@ -11,6 +11,14 @@ layout (binding = 2) uniform sampler2D NormalMapTex;
 
 layout (location = 0) out vec4 FragColor;
 
+uniform vec3 FogColor;
+uniform float FogDensity;
+
+uniform struct FogInfo{
+    float MaxDist;
+    float MinDist;
+    vec3 Color;
+} Fog;
 
 #define NUM_LIGHTS 3
 uniform struct LightInfo {
@@ -75,13 +83,16 @@ void main()
         color += blinnPhongLight(i, n, texColor);
 
     //fog
-    float dist = length(Position);
-    float fogFactor = exp(-0.08 * dist);
+    float dist = abs(Position.z);
+
+    // Exponential squared fog
+    float fogFactor = (Fog.MaxDist-dist)/(Fog.MaxDist-Fog.MinDist);
+
+    // Clamp between 0 and 1
     fogFactor = clamp(fogFactor, 0.0, 1.0);
 
-    vec3 fogColor = vec3(0.02, 0.02, 0.03); // dark blue/grey
+    // Mix fog with lighting
+    vec3 finalColor = mix(FogColor, color, fogFactor);
 
-    color = mix(fogColor, color, fogFactor);
-
-    FragColor = vec4(color, 1.0);
+    FragColor = vec4(finalColor, 1.0);
 }

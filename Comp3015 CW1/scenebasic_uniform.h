@@ -21,14 +21,19 @@ class SceneBasic_Uniform : public Scene
 private:
     GLSLProgram prog;
     Plane plane;
-    Torus torus;
-    Teapot teapot;
-    //GLuint brick, moss;
-    //Cube cube;
     std::unique_ptr<ObjMesh> mesh;
+    std::unique_ptr<ObjMesh> pillar;
     SkyBox sky;
-    std::unique_ptr<ObjMesh> spot;
     GLuint fboHandle;
+
+    // Plane textures
+    GLuint planeTex1, planeTex2, planeNormal;
+
+    // Statue textures
+    GLuint statueTex1, statueTex2, statueNormal;
+
+    // Pillar textures
+    GLuint pillarTex1, pillarTex2, pillarNormal;
 
     float rotSpeed;
     float tPrev;
@@ -39,7 +44,7 @@ private:
     //Camera controls
     bool keyW = false, keyA = false, keyS = false, keyD = false, keyQ = false, keyE = false, keyC = false, key1 = false, key2 = false, key3 = false;
 
-    glm::vec3 camPos = glm::vec3(0.0f, 2.0f, 7.0f);
+    glm::vec3 camPos = glm::vec3(0.0f, 6.0f, 9.0f);
     float camSpeed = 4.0f;
     float camAngle;
     float camRadius;
@@ -49,9 +54,9 @@ private:
     //Light controls
     int activeLight = 0;
     glm::vec3 lightPositions[3] = {
-        glm::vec3(0.0f, 1.0f,  6.0f),
-        glm::vec3(5.0f, 1.0f,  -6.0f),
-        glm::vec3(-5.0f, 1.0f, -6.0f)
+        glm::vec3(0.0f, 4.0f,  6.0f),
+        glm::vec3(5.0f, 4.0f,  -6.0f),
+        glm::vec3(-5.0f, 4.0f, -6.0f)
     };
 
     glm::vec3 lightDirections[3] = {
