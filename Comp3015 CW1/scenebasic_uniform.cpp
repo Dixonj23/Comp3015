@@ -36,7 +36,7 @@ SceneBasic_Uniform::SceneBasic_Uniform() :
     //sky(100.0f),
     plane(100.0f, 100.0f, 1, 1)
     {
-        mesh = ObjMesh::load("media/bs_ears.obj", false, true);
+        mesh = ObjMesh::load("media/portal.obj", false, true);
         pillar = ObjMesh::load("media/pillar/pillar.obj", false);
     }
 
@@ -86,13 +86,14 @@ void SceneBasic_Uniform::initScene()
     
     // Plane Textures
     planeTex1 = Texture::loadTexture("media/texture/brick1.jpg");
-    planeTex2 = Texture::loadTexture("media/texture/moss.png");
+    planeTex2 = Texture::loadTexture("media/texture/brick1.jpg");
     planeNormal = Texture::loadTexture("media/texture/ogre_normalmap.png");
 
     // Statue Textures
-    statueTex1 = Texture::loadTexture("media/texture/ogre_diffuse.png");
-    statueTex2 = Texture::loadTexture("media/texture/ogre_diffuse.png");
-    statueNormal = Texture::loadTexture("media/texture/ogre_normalmap.png");
+    statueTex1 = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture3_BaseColor.png");
+    statueTex2 = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture4_BaseColor.png");
+    //statueTex2 = Texture::loadTexture("media/texture/cement.jpg");
+    statueNormal = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture3_Normal.png");
 
     // Pillar Textures
     pillarTex1 = Texture::loadTexture("media/pillar/pillar_large_MAT_BaseColor.jpg");
@@ -321,7 +322,7 @@ void SceneBasic_Uniform::renderScene() {
     prog.setUniform("Material.Shininess", 100.0f);
 
     model = mat4(1.0f);
-    model = glm::scale(glm::translate(model, vec3(0.0f, 4.0f, 0.0f)), vec3(2.0f));
+    model = glm::scale(glm::translate(model, vec3(0.0f, 0.0f, 0.0f)), vec3(0.05f));
     //model = glm::rotate(model, glm::radians(-90.0f), vec3(1.0f, 0.0f, 0.0f));
     setMatrices();
     mesh->render();
@@ -346,7 +347,7 @@ void SceneBasic_Uniform::renderScene() {
     model = mat4(1.0f);
     model = glm::scale(glm::translate(model, vec3(0.0f, -0.5f, 0.0f)), vec3(0.0008f, 0.0005f, 0.0008f));
     setMatrices();
-    pillar->render();
+    //pillar->render();
 
 
     //bind plane textures
