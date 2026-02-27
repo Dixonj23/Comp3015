@@ -21,8 +21,10 @@ class SceneBasic_Uniform : public Scene
 private:
     GLSLProgram prog;
     Plane plane;
+    Cube cube;
     std::unique_ptr<ObjMesh> mesh;
     std::unique_ptr<ObjMesh> pillar;
+    std::unique_ptr<ObjMesh> ritualMesh;
     SkyBox sky;
     GLuint fboHandle;
 
@@ -35,11 +37,41 @@ private:
     // Pillar textures
     GLuint pillarTex1, pillarTex2, pillarNormal;
 
+    GLuint corruptTex;
+
     float rotSpeed;
     float tPrev;
     float angle;
 
+    //game stuff
+    enum GameState { PUZZLE, PRE_RITUAL, RITUAL, CHARGE, JUMPSCARE };
+
+    GameState gameState = PUZZLE;
+
+    float ritualTimer = 0.0f;
+    float ritualDelayTimer = 0.0f;
+    float ritualDelay = 2.5f; // seconds pause before ritual
+    float jumpscareTimer = 0.0f;
     bool lightViewMode = false;
+
+    bool debugLights = true;
+    bool lightSolved[3] = { false, false, false };
+    glm::vec3 statueTargets[3] =
+    {
+        glm::vec3(-0.4f, 7.0f, -1.2f),
+        glm::vec3(-0.4f, 5.0f, -1.2f),
+        glm::vec3(0.6f, 3.0f, -1.2f)
+    };
+
+    bool waitingForNextLight = false;
+    float lightSwitchTimer = 0.0f;
+    float lightSwitchDelay = 1.0f; // second pause before switch lights
+
+    //ritual params
+    float ritualStartPos = -2.0f;
+    float ritualTargetPos = 1.5f;
+    float ritualMoveSpeed = 1.5f;
+    bool ritualInPosition = false;
 
     //Camera controls
     bool keyW = false, keyA = false, keyS = false, keyD = false, keyQ = false, keyE = false, keyC = false, key1 = false, key2 = false, key3 = false;
@@ -70,11 +102,13 @@ private:
 
     void keyInput(int key, int action) override;
     void setLights();
+    bool checkPuzzleSolved();
+    bool lightHitsRitual();
+
     void compile();
     void setMatrices();
 
     void setupFBO();
-    void renderToTexture();
     void renderScene();
 
 public:

@@ -20,9 +20,11 @@ uniform struct LightInfo {
 out vec3 Position; 
 out vec2 TexCoord;
 out mat3 TBN;
+out vec3 WorldPos;
 
 uniform mat4 ModelViewMatrix;
 uniform mat3 NormalMatrix;
+uniform mat4 ModelMatrix;
 uniform mat4 MVP;
 
 void main()
@@ -30,6 +32,8 @@ void main()
 	TexCoord = VertexTexCoord;
 
     Position = (ModelViewMatrix * vec4(VertexPosition,1.0)).xyz;
+
+    WorldPos = (ModelMatrix * vec4(VertexPosition,1.0)).xyz;
 
     vec3 N = normalize(NormalMatrix * VertexNormal);
     vec3 T = normalize(NormalMatrix * VertexTangent);

@@ -37,12 +37,16 @@ SceneBasic_Uniform::SceneBasic_Uniform() :
     plane(100.0f, 100.0f, 1, 1)
     {
         mesh = ObjMesh::load("media/portal.obj", false, true);
+        ritualMesh = ObjMesh::load("media/bs_ears.obj", false, true);
         pillar = ObjMesh::load("media/pillar/pillar.obj", false);
     }
 
 
 bool cPressedLastFrame = false;
 float baseYaw[3];
+
+float globalTime = 0.0f;
+float targetSolveTime[3] = { -1.0f, -1.0f, -1.0f };
 
 void SceneBasic_Uniform::keyInput(int key, int action)
 {
@@ -91,9 +95,13 @@ void SceneBasic_Uniform::initScene()
 
     // Statue Textures
     statueTex1 = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture3_BaseColor.png");
-    statueTex2 = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture4_BaseColor.png");
-    //statueTex2 = Texture::loadTexture("media/texture/cement.jpg");
+    //statueTex2 = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture4_BaseColor.png");
+    statueTex2 = Texture::loadTexture("media/texture/cement.jpg");
     statueNormal = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture3_Normal.png");
+
+    //corrupted statue tex
+    corruptTex = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture4_BaseColor.png");
+    prog.setUniform("CorruptTex", 3);
 
     // Pillar Textures
     pillarTex1 = Texture::loadTexture("media/pillar/pillar_large_MAT_BaseColor.jpg");
@@ -141,8 +149,35 @@ void SceneBasic_Uniform::compile()
 	}
 }
 
+
+bool SceneBasic_Uniform::checkPuzzleSolved()
+{
+    return lightSolved[0] && lightSolved[1] && lightSolved[2];
+}
+
+bool SceneBasic_Uniform::lightHitsRitual()
+{
+    glm::vec3 ritualPos(0.0f, 2.5f, 0.0f);
+
+    for (int i = 0;i < 3;i++)
+    {
+        glm::vec3 toRitual = glm::normalize(ritualPos - lightPositions[i]);
+
+        float alignment = glm::dot(toRitual, lightDirections[i]);
+
+        if (alignment > 0.95f)
+            return true;
+    }
+
+    return false;
+}
+
 void SceneBasic_Uniform::update(float t)
 {
+    //global timer
+    globalTime = t;
+
+    //delta timer
     float deltaT = t - tPrev;
     if (tPrev == 0.0f) {
         deltaT = 0.0f;
@@ -166,40 +201,129 @@ void SceneBasic_Uniform::update(float t)
         //printf("%.1f \n", camRadius);
         //printf("%.1f \n", camHeight);
     }
-    if (lightViewMode) {
-        //spotlight control
-        float rotSpeed = 1.5f;
+    //spotlight control / solving
+    if (lightViewMode)
+    {
+        int i = activeLight;
 
-        if (keyW) lightPitch[activeLight] += rotSpeed * deltaT;
-        if (keyS) lightPitch[activeLight] -= rotSpeed * deltaT;
-        if (keyA) lightYaw[activeLight] += rotSpeed * deltaT;
-        if (keyD) lightYaw[activeLight] -= rotSpeed * deltaT;
-
-        if (key1) activeLight = 0;
-        if (key2) activeLight = 1;
-        if (key3) activeLight = 2;
-
-
-        for (int i = 0; i < 3; i++)
+        // only allow movement if not solved and not waiting
+        if (!lightSolved[i] && !waitingForNextLight)
         {
+            float rotSpeed = 1.5f;
+
+            if (keyW) lightPitch[i] += rotSpeed * deltaT;
+            if (keyS) lightPitch[i] -= rotSpeed * deltaT;
+            if (keyA) lightYaw[i] += rotSpeed * deltaT;
+            if (keyD) lightYaw[i] -= rotSpeed * deltaT;
+
+            // clamp and rebuild direction for active light
+            lightPitch[i] = glm::clamp(lightPitch[i], -glm::radians(60.0f), glm::radians(60.0f));
+
+            float yawLimit = glm::radians(60.0f);
+            lightYaw[i] = glm::clamp(lightYaw[i], baseYaw[i] - yawLimit, baseYaw[i] + yawLimit);
+
             glm::vec3 dir;
             dir.x = cos(lightPitch[i]) * sin(lightYaw[i]);
             dir.y = sin(lightPitch[i]);
             dir.z = cos(lightPitch[i]) * cos(lightYaw[i]);
-
-            lightPitch[activeLight] = glm::clamp(lightPitch[activeLight],
-                -glm::radians(60.0f),
-                glm::radians(60.0f));
-
-            float yawLimit = glm::radians(60.0f);
-
-            lightYaw[activeLight] = glm::clamp(
-                lightYaw[activeLight],
-                baseYaw[activeLight] - yawLimit,
-                baseYaw[activeLight] + yawLimit
-            );
-
             lightDirections[i] = glm::normalize(dir);
+
+            // SOLVE CHECK 
+            glm::vec3 toTarget = glm::normalize(statueTargets[i] - lightPositions[i]);
+            float alignment = glm::dot(toTarget, lightDirections[i]);
+            float ang = acos(glm::clamp(alignment, -1.0f, 1.0f));
+
+            if (ang < glm::radians(2.0f))   
+            {
+                lightSolved[i] = true;
+                waitingForNextLight = true;
+                lightSwitchTimer = 0.0f;
+
+                if (targetSolveTime[i] < 0.0f)
+                    targetSolveTime[i] = globalTime;   // start spreading now
+            }
+        }
+
+        // switching lights should still work even while waiting
+        if (gameState == PUZZLE && !waitingForNextLight)
+        {
+            if (key1) activeLight = 0;
+            if (key2) activeLight = 1;
+            if (key3) activeLight = 2;
+        }
+    }
+
+    //delay before switching
+    if (waitingForNextLight)
+    {
+        lightSwitchTimer += deltaT;
+
+        if (lightSwitchTimer > lightSwitchDelay)
+        {
+            waitingForNextLight = false;
+
+            // advance to the next UNSOLVED light
+            int next = activeLight;
+            for (int step = 0; step < 3; step++)
+            {
+                next = (next + 1) % 3;
+                if (!lightSolved[next]) { activeLight = next; break; }
+            }
+        }
+    }
+
+    //game state
+    if (gameState == PUZZLE)
+    {
+        if (checkPuzzleSolved())
+        {
+            gameState = PRE_RITUAL;
+            ritualDelayTimer = 0.0f;
+
+            lightViewMode = true;
+            activeLight = 0;   // force player to main spotlight
+        }
+    }
+
+    if (gameState == PRE_RITUAL)
+    {
+        ritualDelayTimer += deltaT;
+
+        if (ritualDelayTimer > ritualDelay)
+        {
+            gameState = RITUAL;
+            ritualTimer = 0.0f;
+        }
+    }
+
+    if (gameState == RITUAL)
+    {
+        ritualTimer += deltaT;
+
+        if (!ritualInPosition)
+        {
+            ritualStartPos += ritualMoveSpeed * deltaT;
+
+            if (ritualStartPos >= ritualTargetPos)
+            {
+                ritualStartPos = ritualTargetPos;
+                ritualInPosition = true;
+            }
+        }
+        else
+        {
+            // once in place wait before charge stage
+            if (ritualTimer > 10.0f)
+                gameState = CHARGE;
+        }
+    }
+
+    if (gameState == CHARGE)
+    {
+        if (lightHitsRitual())
+        {
+            gameState = JUMPSCARE;
+            jumpscareTimer = 0.0f;
         }
     }
 }
@@ -214,6 +338,21 @@ void SceneBasic_Uniform::setLights()
 
     for (int i = 0; i < 3; i++)
     {
+        //target params
+        prog.setUniform(("TargetPos[" + std::to_string(i) + "]").c_str(), statueTargets[i]);
+        prog.setUniform(("TargetSolved[" + std::to_string(i) + "]").c_str(), lightSolved[i] ? 1 : 0);
+
+        prog.setUniform("Time", globalTime);
+        prog.setUniform("SpreadSpeed", 0.5f);        // tweak
+        prog.setUniform("StartRadius", 0.25f);       // tweak
+        prog.setUniform("MaxSpreadRadius", 3.0f);   // must cover statue
+
+        for (int i = 0; i < 3; i++) {
+            prog.setUniform(("TargetSolveTime[" + std::to_string(i) + "]").c_str(),
+                (targetSolveTime[i] < 0.0f ? globalTime : targetSolveTime[i]));
+        }
+
+
         glm::vec4 posEye = view * glm::vec4(lightPositions[i], 1.0f);
         glm::vec3 dirEye = glm::normalize(glm::mat3(view) * lightDirections[i]);
 
@@ -234,10 +373,41 @@ void SceneBasic_Uniform::setLights()
         prog.setUniform(name.str().c_str(), glm::vec3(0.05f));
         name.str(""); name.clear();
 
-        //light colour
+        //spotlight color
+        glm::vec3 lightColor;
+
+        if (lightSolved[i])
+        {
+            if (waitingForNextLight && i == activeLight)
+                lightColor = glm::vec3(0.6f, 0.0f, 0.8f); // brighter purple flash
+            else
+                lightColor = glm::vec3(0.35f, 0.0f, 0.45f); // normal dark purple
+        }
+        else if (i == activeLight)
+        {
+            //brighter closer to target
+            glm::vec3 toTarget = glm::normalize(statueTargets[i] - lightPositions[i]);
+            float alignment = glm::dot(toTarget, lightDirections[i]);
+
+            float t = glm::clamp((alignment - 0.8f) / 0.2f, 0.0f, 1.0f);
+
+            float baseIntensity = 0.15f;
+            float intensity = baseIntensity + (1.0f - baseIntensity) * t;
+
+            lightColor = glm::vec3(intensity);
+        }
+        else
+        {
+            // dim inactive lights
+            lightColor = glm::vec3(0.15f);
+        }
+
+        //ritual override
+        if (gameState == RITUAL)
+            lightColor = glm::vec3(1.0f, 0.0f, 0.0f);
+
         name << "Lights[" << i << "].L";
-        //prog.setUniform(name.str().c_str(), glm::vec3(1.0f));
-        prog.setUniform(name.str().c_str(), colours[i]);
+        prog.setUniform(name.str().c_str(), lightColor);
         name.str(""); name.clear();
 
         // spotlight params
@@ -247,14 +417,6 @@ void SceneBasic_Uniform::setLights()
 
         name << "Lights[" << i << "].Exponent";
         prog.setUniform(name.str().c_str(), 45.0f);
-
-        //selected light brighter
-        if (i == activeLight)
-            prog.setUniform(("Lights[" + std::to_string(i) + "].L").c_str(),
-                glm::vec3(1.5f));
-        else
-            prog.setUniform(("Lights[" + std::to_string(i) + "].L").c_str(),
-                colours[i]);
     }
 }
 
@@ -305,6 +467,22 @@ void SceneBasic_Uniform::renderScene() {
     //vec4 lightPos = vec4(10.0f * cos(angle), 10.0f, 10.0f * sin(angle), 1.0f);
     setLights();
 
+    if (debugLights)
+    {
+        //Statue targets
+        for (int i = 0;i < 3;i++)
+        {
+            model = mat4(1.0f);
+            model = glm::translate(model, statueTargets[i]);
+            model = glm::scale(model, glm::vec3(0.08f));
+
+            prog.setUniform("Material.Kd", vec3(0.0f, 1.0f, 0.0f));
+
+            setMatrices();
+            cube.render();
+        }
+    }
+
     //bind statue textures
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, statueTex1);
@@ -314,6 +492,9 @@ void SceneBasic_Uniform::renderScene() {
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, statueNormal);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, corruptTex);
 
     //Render Mesh
     prog.setUniform("Material.Kd", vec3(0.4f, 0.4f, 0.4f));
@@ -371,6 +552,21 @@ void SceneBasic_Uniform::renderScene() {
     plane.render();
     
     
+    //Render Ritual
+    if (gameState == RITUAL || gameState == CHARGE || gameState == JUMPSCARE)
+    {
+        model = mat4(1.0f);
+        model = glm::translate(model, vec3(0.0f, 6.5f, ritualStartPos));
+
+        if (ritualInPosition)
+        {
+            model = glm::rotate(model, ritualTimer * 5.0f, vec3(0, 1, 0));
+        }
+
+        setMatrices();
+        ritualMesh->render();
+    }
+
 }
 
 void SceneBasic_Uniform::resize(int w, int h)

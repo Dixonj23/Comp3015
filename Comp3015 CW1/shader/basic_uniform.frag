@@ -3,13 +3,23 @@
 in vec3 Position;
 in mat3 TBN;
 in vec2 TexCoord;
+in vec3 WorldPos;
 
 uniform sampler2D RenderTex;
 layout (binding = 0) uniform sampler2D baseTexColor1;
 layout (binding = 1) uniform sampler2D baseTexColor2;
 layout (binding = 2) uniform sampler2D NormalMapTex;
+layout (binding = 3) uniform sampler2D CorruptTex;
 
 layout (location = 0) out vec4 FragColor;
+
+uniform vec3 TargetPos[3];
+uniform int TargetSolved[3];
+uniform float Time;
+uniform float TargetSolveTime[3];
+uniform float SpreadSpeed;       
+uniform float StartRadius;
+uniform float MaxSpreadRadius;  
 
 uniform vec3 FogColor;
 uniform float FogDensity;
@@ -69,30 +79,53 @@ vec3 blinnPhongLight(int i, vec3 n, vec3 texColor)
 
 void main()
 {
-    // texture mixing
+    //base texture mixing
     vec4 c1 = texture(baseTexColor1, TexCoord);
     vec4 c2 = texture(baseTexColor2, TexCoord);
     vec3 texColor = mix(c1.rgb, c2.rgb, c2.a);
 
-    // normal map (tangent -> eye using TBN)
+    //target corruption
+    float corruptAmount = 0.0;
+    vec3 corruptTex = texture(CorruptTex, TexCoord).rgb;
+
+    for (int i = 0; i < 3; i++)
+    {
+        if (TargetSolved[i] == 1)
+        {
+            // time since THIS target was solved
+            float dt = max(Time - TargetSolveTime[i], 0.0);
+
+            // radius grows forever, but clamp so it doesn't explode
+            float radius = min(MaxSpreadRadius, StartRadius + dt * SpreadSpeed);
+
+            float d = distance(WorldPos, TargetPos[i]);
+
+            // soft edge: 1 inside, 0 outside
+            float edge = 0.25; // softness width
+            float m = 1.0 - smoothstep(radius - edge, radius + edge, d);
+
+            corruptAmount = max(corruptAmount, m);
+        }
+    }
+
+    // normal mapping
     vec3 nTan = texture(NormalMapTex, TexCoord).xyz * 2.0 - 1.0;
     vec3 n = normalize(TBN * nTan);
 
-    vec3 color = vec3(0.0);
+    //lighting
+    vec3 lit = vec3(0.0);
     for (int i = 0; i < NUM_LIGHTS; i++)
-        color += blinnPhongLight(i, n, texColor);
+        lit += blinnPhongLight(i, n, texColor);
+
+    // overlay corruption after lighting
+    vec3 color = mix(lit, corruptTex, corruptAmount);
 
     //fog
     float dist = abs(Position.z);
-
-    // Exponential squared fog
     float fogFactor = (Fog.MaxDist-dist)/(Fog.MaxDist-Fog.MinDist);
-
-    // Clamp between 0 and 1
     fogFactor = clamp(fogFactor, 0.0, 1.0);
 
-    // Mix fog with lighting
+    // Final output
     vec3 finalColor = mix(FogColor, color, fogFactor);
-
     FragColor = vec4(finalColor, 1.0);
 }
