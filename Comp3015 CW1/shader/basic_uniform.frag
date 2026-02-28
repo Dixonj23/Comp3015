@@ -4,14 +4,18 @@ in vec3 Position;
 in mat3 TBN;
 in vec2 TexCoord;
 in vec3 WorldPos;
+in vec3 SkyDir;
 
 uniform sampler2D RenderTex;
 layout (binding = 0) uniform sampler2D baseTexColor1;
 layout (binding = 1) uniform sampler2D baseTexColor2;
 layout (binding = 2) uniform sampler2D NormalMapTex;
 layout (binding = 3) uniform sampler2D CorruptTex;
+layout (binding = 4) uniform samplerCube SkyBoxTex;
 
 layout (location = 0) out vec4 FragColor;
+
+uniform bool RenderSkybox;
 
 uniform vec3 TargetPos[3];
 uniform int TargetSolved[3];
@@ -20,6 +24,8 @@ uniform float TargetSolveTime[3];
 uniform float SpreadSpeed;       
 uniform float StartRadius;
 uniform float MaxSpreadRadius;  
+
+uniform int ActiveLight;
 
 uniform vec3 FogColor;
 uniform float FogDensity;
@@ -79,6 +85,15 @@ vec3 blinnPhongLight(int i, vec3 n, vec3 texColor)
 
 void main()
 {
+    //skybox
+    if(RenderSkybox)
+    {
+        vec3 texColor = texture(SkyBoxTex, SkyDir).rgb;
+        FragColor = vec4(texColor, 1.0);
+        return;
+    }
+
+
     //base texture mixing
     vec4 c1 = texture(baseTexColor1, TexCoord);
     vec4 c2 = texture(baseTexColor2, TexCoord);
@@ -117,6 +132,24 @@ void main()
     for (int i = 0; i < NUM_LIGHTS; i++)
         lit += blinnPhongLight(i, n, texColor);
 
+    // Target glow
+
+    float distance = distance(WorldPos, TargetPos[ActiveLight]);
+
+    float radius = 0.8;
+
+    if(distance < radius)
+    {
+        float glow = 1.0 - (distance / radius);
+
+        vec3 glowColor = vec3(0.6, 0.0, 0.9); // purple
+
+        lit += glowColor * glow * 0.8;
+    }
+    
+
+
+
     // overlay corruption after lighting
     vec3 color = mix(lit, corruptTex, corruptAmount);
 
@@ -128,4 +161,5 @@ void main()
     // Final output
     vec3 finalColor = mix(FogColor, color, fogFactor);
     FragColor = vec4(finalColor, 1.0);
+    
 }

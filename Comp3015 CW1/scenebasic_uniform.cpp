@@ -24,6 +24,7 @@ using std::endl;
 #include "helper/texture.h"
 
 #include <sstream>
+#include "helper/stb/stb_image.h"
 
 using glm::vec3;
 using glm::vec4;
@@ -32,13 +33,13 @@ using glm::mat4;
 
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
-    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f), camAngle(4.7f), camRadius(-5.0f), camHeight(3.5f),
-    //sky(100.0f),
+    tPrev(0), angle(0.0f), rotSpeed(glm::pi<float>() / 8.0f), camAngle(4.7f), camRadius(-5.0f), camHeight(6.5f),
+    sky(100.0f),
     plane(100.0f, 100.0f, 1, 1)
     {
         mesh = ObjMesh::load("media/portal.obj", false, true);
-        ritualMesh = ObjMesh::load("media/bs_ears.obj", false, true);
-        pillar = ObjMesh::load("media/pillar/pillar.obj", false);
+        ritualMesh = ObjMesh::load("media/relic.obj", false, true);
+        jumpscareMesh = ObjMesh::load("media/bs_ears.obj", false, true);
     }
 
 
@@ -80,6 +81,53 @@ void SceneBasic_Uniform::keyInput(int key, int action)
     }
 }
 
+unsigned int loadCubeMap(const std::vector<std::string>& faces)
+{
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+    int width, height, nrChannels;
+
+    for (unsigned int i = 0; i < faces.size(); i++)
+    {
+        unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+
+        if (data)
+        {
+            GLenum format = (nrChannels == 4) ? GL_RGBA : GL_RGB;
+
+            glTexImage2D(
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                0,
+                format,
+                width,
+                height,
+                0,
+                format,
+                GL_UNSIGNED_BYTE,
+                data
+            );
+
+            stbi_image_free(data);
+        }
+        else
+        {
+            std::cout << "Cubemap texture failed: " << faces[i] << std::endl;
+            stbi_image_free(data);
+        }
+    }
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return textureID;
+}
+
 void SceneBasic_Uniform::initScene()
 {
     compile();
@@ -103,10 +151,19 @@ void SceneBasic_Uniform::initScene()
     corruptTex = Texture::loadTexture("media/textures/EntradaBossSP_EntradaTexture4_BaseColor.png");
     prog.setUniform("CorruptTex", 3);
 
-    // Pillar Textures
-    pillarTex1 = Texture::loadTexture("media/pillar/pillar_large_MAT_BaseColor.jpg");
-    pillarTex2 = Texture::loadTexture("media/pillar/pillar_large_MAT_BaseColor.jpg");
-    pillarNormal = Texture::loadTexture("media/pillar/pillar_large_MAT_Normal.jpg");
+    //skybox texture
+    std::vector<std::string> faces =
+    {
+        "media/texture/cube/sky/px.png",
+        "media/texture/cube/sky/nx.png",
+        "media/texture/cube/sky/ny.png",
+        "media/texture/cube/sky/py.png",
+        "media/texture/cube/sky/pz.png",
+        "media/texture/cube/sky/nz.png"
+    };
+
+    cubeTex = loadCubeMap(faces);
+    prog.setUniform("SkyBoxTex", 4);
 
     //setupFBO();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -280,8 +337,8 @@ void SceneBasic_Uniform::update(float t)
             gameState = PRE_RITUAL;
             ritualDelayTimer = 0.0f;
 
-            lightViewMode = true;
-            activeLight = 0;   // force player to main spotlight
+            lightViewMode = false;
+            //activeLight = 0;   // force player to main spotlight
         }
     }
 
@@ -326,6 +383,17 @@ void SceneBasic_Uniform::update(float t)
             jumpscareTimer = 0.0f;
         }
     }
+
+    if (gameState == JUMPSCARE)
+    {
+        jumpscareTimer += deltaT;
+
+        // move creature toward player
+        jumpscareDistance -= jumpscareSpeed * deltaT;
+
+        if (jumpscareDistance < 1.0f)
+            jumpscareDistance = 1.0f;
+    }
 }
 
 void SceneBasic_Uniform::setLights()
@@ -339,13 +407,15 @@ void SceneBasic_Uniform::setLights()
     for (int i = 0; i < 3; i++)
     {
         //target params
+        prog.setUniform("ActiveLight", activeLight);
+
         prog.setUniform(("TargetPos[" + std::to_string(i) + "]").c_str(), statueTargets[i]);
         prog.setUniform(("TargetSolved[" + std::to_string(i) + "]").c_str(), lightSolved[i] ? 1 : 0);
 
         prog.setUniform("Time", globalTime);
-        prog.setUniform("SpreadSpeed", 0.5f);        // tweak
-        prog.setUniform("StartRadius", 0.25f);       // tweak
-        prog.setUniform("MaxSpreadRadius", 3.0f);   // must cover statue
+        prog.setUniform("SpreadSpeed", 0.5f);      
+        prog.setUniform("StartRadius", 0.25f);       
+        prog.setUniform("MaxSpreadRadius", 3.0f);   
 
         for (int i = 0; i < 3; i++) {
             prog.setUniform(("TargetSolveTime[" + std::to_string(i) + "]").c_str(),
@@ -431,15 +501,19 @@ void SceneBasic_Uniform::renderScene() {
     glViewport(0, 0, width, height);
 
     glm::vec3 fogCol(0.005f, 0.005f, 0.01f);
+
+    if (gameState == JUMPSCARE)
+    {
+        fogCol = glm::vec3(0.5f, 0.0f, 0.0f);
+    }
     glClearColor(fogCol.r, fogCol.g, fogCol.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 
 
     if (lightViewMode)
     {
         // Camera sits at active light
-        glm::vec3 eye = lightPositions[activeLight] + glm::vec3(0.0f, 0.2f, 0.0f);
+        glm::vec3 eye = lightPositions[activeLight] + glm::vec3(0.0f, 0.6f, 0.0f);
 
         // Look in spotlight direction
         glm::vec3 center = eye + lightDirections[activeLight];
@@ -459,10 +533,28 @@ void SceneBasic_Uniform::renderScene() {
 
         view = glm::lookAt(
             camPos,
-            glm::vec3(0.0f, 2.0f, 0.0f),
+            glm::vec3(0.0f, 6.0f, 0.0f),
             glm::vec3(0.0f, 1.0f, 0.0f)
         );
     }
+
+    // Render Skybox
+    glDepthMask(GL_FALSE);
+
+    prog.setUniform("RenderSkybox", true);
+
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubeTex);
+
+    model = mat4(1.0f);
+    mat4 skyView = mat4(mat3(view)); // remove translation
+    prog.setUniform("ModelViewMatrix", skyView * model);
+    prog.setUniform("MVP", projection * skyView * model);
+    sky.render();
+
+    glDepthMask(GL_TRUE);
+
+    prog.setUniform("RenderSkybox", false);
    
     //vec4 lightPos = vec4(10.0f * cos(angle), 10.0f, 10.0f * sin(angle), 1.0f);
     setLights();
@@ -482,6 +574,8 @@ void SceneBasic_Uniform::renderScene() {
             cube.render();
         }
     }
+
+    
 
     //bind statue textures
     glActiveTexture(GL_TEXTURE0);
@@ -509,28 +603,6 @@ void SceneBasic_Uniform::renderScene() {
     mesh->render();
 
 
-    // bind pillar textures
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, pillarTex1);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, pillarTex2);
-
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, pillarNormal);
-
-    //Render Pillar
-    prog.setUniform("Material.Kd", vec3(0.4f, 0.4f, 0.4f));
-    prog.setUniform("Material.Ks", vec3(0.5f, 0.5f, 0.5f));
-    prog.setUniform("Material.Ka", vec3(0.9f, 0.9f, 0.9f));
-    prog.setUniform("Material.Shininess", 100.0f);
-
-    model = mat4(1.0f);
-    model = glm::scale(glm::translate(model, vec3(0.0f, -0.5f, 0.0f)), vec3(0.0008f, 0.0005f, 0.0008f));
-    setMatrices();
-    //pillar->render();
-
-
     //bind plane textures
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, planeTex1);
@@ -553,10 +625,10 @@ void SceneBasic_Uniform::renderScene() {
     
     
     //Render Ritual
-    if (gameState == RITUAL || gameState == CHARGE || gameState == JUMPSCARE)
+    if (gameState == RITUAL || gameState == CHARGE)
     {
         model = mat4(1.0f);
-        model = glm::translate(model, vec3(0.0f, 6.5f, ritualStartPos));
+        model = glm::scale(glm::translate(model, vec3(0.0f, 6.5f, ritualStartPos)), vec3(0.005f));
 
         if (ritualInPosition)
         {
@@ -565,6 +637,21 @@ void SceneBasic_Uniform::renderScene() {
 
         setMatrices();
         ritualMesh->render();
+    }
+
+    if (gameState == JUMPSCARE)
+    {
+        vec3 forward = normalize(vec3(view[0][2], view[1][2], view[2][2])) * -1.0f;
+        vec3 pos = camPos + forward * jumpscareDistance;
+
+        model = mat4(1.0f);
+        model = glm::translate(model, pos);
+        float scale = 0.2f + jumpscareTimer ;
+
+        model = glm::scale(model, vec3(scale));
+
+        setMatrices();
+        jumpscareMesh->render();
     }
 
 }

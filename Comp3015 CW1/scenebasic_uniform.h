@@ -11,8 +11,6 @@
 
 #include "helper/plane.h"
 #include "helper/objmesh.h"
-#include "helper/torus.h"
-#include "helper/teapot.h"
 #include "helper/cube.h"
 #include "helper/skybox.h"
 
@@ -25,6 +23,7 @@ private:
     std::unique_ptr<ObjMesh> mesh;
     std::unique_ptr<ObjMesh> pillar;
     std::unique_ptr<ObjMesh> ritualMesh;
+    std::unique_ptr<ObjMesh> jumpscareMesh;
     SkyBox sky;
     GLuint fboHandle;
 
@@ -33,11 +32,13 @@ private:
 
     // Statue textures
     GLuint statueTex1, statueTex2, statueNormal;
+    GLuint corruptTex;
 
     // Pillar textures
     GLuint pillarTex1, pillarTex2, pillarNormal;
 
-    GLuint corruptTex;
+    //Skybox texture
+    GLuint cubeTex;
 
     float rotSpeed;
     float tPrev;
@@ -51,16 +52,15 @@ private:
     float ritualTimer = 0.0f;
     float ritualDelayTimer = 0.0f;
     float ritualDelay = 2.5f; // seconds pause before ritual
-    float jumpscareTimer = 0.0f;
     bool lightViewMode = false;
 
     bool debugLights = true;
     bool lightSolved[3] = { false, false, false };
     glm::vec3 statueTargets[3] =
     {
-        glm::vec3(-0.4f, 7.0f, -1.2f),
-        glm::vec3(-0.4f, 5.0f, -1.2f),
-        glm::vec3(0.6f, 3.0f, -1.2f)
+        glm::vec3(0.0f, 8.0f, -1.2f),
+        glm::vec3(0.2f, 5.0f, -1.2f),
+        glm::vec3(0.6f, 1.0f, -1.2f)
     };
 
     bool waitingForNextLight = false;
@@ -73,10 +73,17 @@ private:
     float ritualMoveSpeed = 1.5f;
     bool ritualInPosition = false;
 
+    //jumpscare params
+    float jumpscareTimer = 0.0f;
+    float jumpscareDuration = 2.0f;
+
+    float jumpscareDistance = 10.0f;   // start distance
+    float jumpscareSpeed = 15.0f;      // movement speed
+
     //Camera controls
     bool keyW = false, keyA = false, keyS = false, keyD = false, keyQ = false, keyE = false, keyC = false, key1 = false, key2 = false, key3 = false;
 
-    glm::vec3 camPos = glm::vec3(0.0f, 6.0f, 9.0f);
+    glm::vec3 camPos = glm::vec3(0.0f, 8.0f, 9.0f);
     float camSpeed = 4.0f;
     float camAngle;
     float camRadius;

@@ -21,6 +21,7 @@ out vec3 Position;
 out vec2 TexCoord;
 out mat3 TBN;
 out vec3 WorldPos;
+out vec3 SkyDir;
 
 uniform mat4 ModelViewMatrix;
 uniform mat3 NormalMatrix;
@@ -30,6 +31,8 @@ uniform mat4 MVP;
 void main()
 {
 	TexCoord = VertexTexCoord;
+
+    SkyDir = vec3(VertexPosition.x, -VertexPosition.y, -VertexPosition.z);
 
     Position = (ModelViewMatrix * vec4(VertexPosition,1.0)).xyz;
 
