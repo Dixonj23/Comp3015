@@ -33,15 +33,15 @@ The prototype uses several real-time rendering techniques implemented using GLSL
 - Spotlight Lighting:
     Each light uses a Blinn-Phong lighting model with a spotlight cutoff and exponent parameters.
     Utilising directional spotlight cones with adjustable intensity and specular highlights.
-- Normal Mapping
+- Normal Mapping:
     Normal maps are used to enhance surface detail on various models without increasing geometric complexity.
     This is umplemented using TBN matrices constructed in the vertex shader and used in the fragment shader.
-- Fog Rendering
+- Fog Rendering:
     Atmospheric fog is applied based on fragment depth, where the final color is blended with the fog color to create a dense atmosphere
-- Skybox Rendering
-    Siz images come together into a cubemap skybox which surrounds the environemnt to simulate distant lighting and a space like atmosphere.
+- Skybox Rendering:
+    Six images come together into a cubemap skybox which surrounds the environemnt to simulate distant lighting and a space like atmosphere.
     The skybox is rendered first with depth writes disabled, then the rest of the scen is rendered normally.
-- Procedural Texture Corruption (Research paper inspired)
+- Procedural Texture Corruption (Research paper inspired):
     When a target is solved, a corruption texture spreads outward from that target point over time.
     This effect is inspired by procedural texture blending techniques described in:
     Dong, J.; Liu, J.; Yao, K.; Chantler, M.; Qi, L.; Yu, H.; Jian, M. Survey of Procedural Methods for Two-Dimensional Texture Generation. Sensors 2020, 20, 1135. https://doi.org/10.3390/s20041135
@@ -49,15 +49,15 @@ The prototype uses several real-time rendering techniques implemented using GLSL
 
 # Code Structure
 The project is organised into several key components:
-- Scenebasuc_uniform.ccp
+- Scenebasuc_uniform.ccp:
   This is the main scene controller and contains most gameplay logic. It is responsible got handling input, updating camera movement, controlling spotlight direction, managing gameplay states and rendering the overall scene.
 
 There are two main shaders that manage everything
-- basic_uniform.vert
+- basic_uniform.vert:
   The vertex shader handles world and view space calculations as well as building the aformentioned TBN matrix for normal mapping.
   After which this data is passed to the fragment shader
-- basic_uniform.frag
-  THe fragment shader performs the lighting calculations while applying the rendering techniques such as normal mapping and fog.
+- basic_uniform.frag:
+  The fragment shader performs the lighting calculations while applying the rendering techniques such as normal mapping and fog.
   It also handles the real time rendering of the skybox and the corruption spreading texture blend.
 
 
