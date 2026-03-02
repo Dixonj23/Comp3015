@@ -28,7 +28,7 @@ The executable version included does not require Visual Studio and can be run di
 | ESC         | Exit Program           |
 
 
-#Rendering Techniques
+# Rendering Techniques
 The prototype uses several real-time rendering techniques implemented using GLSL shaders.
 - Spotlight Lighting:
     Each light uses a Blinn-Phong lighting model with a spotlight cutoff and exponent parameters.
