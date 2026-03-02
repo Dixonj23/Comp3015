@@ -3,6 +3,7 @@
 
 A small interactive horror puzzle built using C++, OpenGL, shaders and GLFW. The player must control three spotlights and aim them at targets on a totally normal statue to complete the ritual.
 Once all targets are activated, a supernatural sequence begins which culminates in something i'll spoil at the end of this document (in case you want to play it first).
+Youtube Report Link: https://youtu.be/ZR9PWXCnims
 
 
 # Developement Environment
