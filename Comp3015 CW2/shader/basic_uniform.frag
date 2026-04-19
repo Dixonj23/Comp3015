@@ -1,11 +1,13 @@
 #version 460
 
-in vec3 Position;
+in vec3 Position;   // view-space position
+in vec3 WorldPos;   // world-space position
 in vec2 TexCoord;
 in mat3 TBN;
 
 layout (binding = 0) uniform sampler2D baseTexColor1;
 layout (binding = 1) uniform sampler2D NormalMapTex;
+uniform samplerCube PointShadowMap;
 
 layout (location = 0) out vec4 FragColor;
 layout (location = 1) out vec4 BrightColor;
@@ -16,12 +18,30 @@ uniform float EmissiveStrength;
 uniform float Time;
 uniform int IsBeam;
 
+uniform vec3 PointShadowLightPos; // world-space light position
+uniform float FarPlane;
+
 uniform struct LightInfo {
-    vec4 Position;
+    vec4 Position;   // view-space light position
     vec3 La;
     vec3 Ld;
     vec3 Ls;
+    float Constant;
+    float Linear;
+    float Quadratic;
 } Light;
+
+struct PointLightInfo {
+    vec4 Position;   // view-space point light position
+    vec3 La;
+    vec3 Ld;
+    vec3 Ls;
+    float Constant;
+    float Linear;
+    float Quadratic;
+};
+
+uniform PointLightInfo CornerLights[4];
 
 uniform struct MaterialInfo {
     vec3 Ka;
@@ -29,6 +49,8 @@ uniform struct MaterialInfo {
     vec3 Ks;
     float Shininess;
 } Material;
+
+
 
 float hash(vec2 p)
 {
@@ -49,57 +71,147 @@ float beamPattern(vec2 uv, float t)
     return (0.45 * wave1 + 0.35 * wave2 + 0.20 * wave3) * flicker;
 }
 
-void main()
+
+float computeAttenuation(float constantTerm, float linearTerm, float quadraticTerm, float dist)
 {
-    vec3 albedo = (UseTexture == 1)
-    ? texture(baseTexColor1, TexCoord).rgb
-    : SolidColor;
+    return 1.0 / (constantTerm + linearTerm * dist + quadraticTerm * dist * dist);
+}
 
-    if (IsBeam == 1)
-    {
-        float energy = beamPattern(TexCoord, Time);
+// Simple point-light shadow lookup.
+// This is the basic version to get working first.
+// You can add PCF later once the shadows are visible.
+float calculatePointShadow(vec3 worldPos)
+{
+    vec3 fragToLight = worldPos - PointShadowLightPos;
+    float currentDepth = length(fragToLight);
 
-        // brighter core with animated variation
-        albedo *= mix(0.7, 1.8, energy);
+    float closestDepth = texture(PointShadowMap, fragToLight).r;
+    closestDepth *= FarPlane;
 
-        // slight color shift 
-        albedo += vec3(0.05, 0.15, 0.25) * energy;
-    }
+    float bias = 0.05;
+    float shadow = (currentDepth - bias > closestDepth) ? 1.0 : 0.0;
 
-    vec3 N;
-    if (UseTexture == 1) {
-        vec3 nTan = texture(NormalMapTex, TexCoord).xyz * 2.0 - 1.0;
-        N = normalize(TBN * nTan);
-    } else {
-        N = normalize(TBN[2]);
-    }
+    // If fragment is outside far plane, don't shadow it
+    if (currentDepth > FarPlane)
+        shadow = 0.0;
 
-    vec3 s = normalize(Light.Position.xyz - Position);
-    vec3 v = normalize(-Position);
-    vec3 h = normalize(v + s);
+    return shadow;
+}
+
+vec3 evaluateMainLight(vec3 albedo, vec3 N, vec3 fragPos, vec3 viewDir)
+{
+    vec3 lightVec = Light.Position.xyz - fragPos;
+    float dist = length(lightVec);
+    vec3 lightDir = normalize(lightVec);
+    vec3 halfVec = normalize(viewDir + lightDir);
+
+    float attenuation = computeAttenuation(
+        Light.Constant,
+        Light.Linear,
+        Light.Quadratic,
+        dist
+    );
+
+    float shadow = calculatePointShadow(WorldPos);
 
     vec3 ambient = Light.La * albedo * Material.Ka;
 
-    float sDotN = max(dot(s, N), 0.0);
-    vec3 diffuse = Light.Ld * albedo * Material.Kd * sDotN;
+    float sDotN = max(dot(lightDir, N), 0.0);
+    vec3 diffuse = Light.Ld * albedo * Material.Kd * sDotN * attenuation * (1.0 - shadow);
 
-    vec3 spec = vec3(0.0);
-    if (sDotN > 0.0) {
-        spec = Light.Ls * Material.Ks * pow(max(dot(h, N), 0.0), Material.Shininess);
+    vec3 specular = vec3(0.0);
+    if (sDotN > 0.0)
+    {
+        specular = Light.Ls * Material.Ks *
+                   pow(max(dot(halfVec, N), 0.0), Material.Shininess) *
+                   attenuation * (1.0 - shadow);
     }
 
-    vec3 litColor = ambient + diffuse + spec;
+    return ambient + diffuse + specular;
+}
 
-    // emissive glow
+vec3 evaluatePointLight(
+    vec3 albedo,
+    vec3 N,
+    vec3 fragPos,
+    vec3 viewDir,
+    PointLightInfo light
+)
+{
+    vec3 lightVec = light.Position.xyz - fragPos;
+    float dist = length(lightVec);
+    vec3 lightDir = normalize(lightVec);
+    vec3 halfVec = normalize(viewDir + lightDir);
+
+    float attenuation = computeAttenuation(
+        light.Constant,
+        light.Linear,
+        light.Quadratic,
+        dist
+    );
+
+    vec3 ambient = light.La * albedo * Material.Ka;
+
+    float sDotN = max(dot(lightDir, N), 0.0);
+    vec3 diffuse = light.Ld * albedo * Material.Kd * sDotN * attenuation;
+
+    vec3 specular = vec3(0.0);
+    if (sDotN > 0.0)
+    {
+        specular = light.Ls * Material.Ks *
+                   pow(max(dot(halfVec, N), 0.0), Material.Shininess) *
+                   attenuation;
+    }
+
+    return ambient + diffuse + specular;
+}
+
+
+void main()
+{
+    // Base colour
+    vec3 albedo = (UseTexture == 1)
+        ? texture(baseTexColor1, TexCoord).rgb
+        : SolidColor;
+
+    // Beam-specific animated energy pattern
+    if (IsBeam == 1)
+    {
+        float energy = beamPattern(TexCoord, Time);
+        albedo *= mix(0.7, 1.8, energy);
+        albedo += vec3(0.05, 0.15, 0.25) * energy;
+    }
+
+    // Normal
+    vec3 N;
+    if (UseTexture == 1)
+    {
+        vec3 nTan = texture(NormalMapTex, TexCoord).xyz * 2.0 - 1.0;
+        N = normalize(TBN * nTan);
+    }
+    else
+    {
+        N = normalize(TBN[2]);
+    }
+
+    vec3 viewDir = normalize(-Position);
+
+    // Main reactor light + corner lights
+    vec3 litColor = evaluateMainLight(albedo, N, Position, viewDir);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        litColor += evaluatePointLight(albedo, N, Position, viewDir, CornerLights[i]);
+    }
+
+    // Emissive contribution
     litColor += albedo * EmissiveStrength;
 
     FragColor = vec4(litColor, 1.0);
 
-    // brightness extraction
+    // Bloom extract
     float brightness = dot(litColor, vec3(0.2126, 0.7152, 0.0722));
-
-    if (brightness > 1.0)
-        BrightColor = vec4(litColor, 1.0);
-    else
-        BrightColor = vec4(0.0, 0.0, 0.0, 1.0);
+    BrightColor = (brightness > 1.0)
+        ? vec4(litColor, 1.0)
+        : vec4(0.0, 0.0, 0.0, 1.0);
 }

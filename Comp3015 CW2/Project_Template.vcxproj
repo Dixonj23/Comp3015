@@ -165,6 +165,9 @@
     <None Include="bloom_blur.vert" />
     <None Include="bloom_final.frag" />
     <None Include="bloom_final.vert" />
+    <None Include="point_shadow_depth.frag" />
+    <None Include="point_shadow_depth.geom" />
+    <None Include="point_shadow_depth.vert" />
     <None Include="shader\basic_uniform.frag" />
     <None Include="shader\basic_uniform.vert" />
   </ItemGroup>

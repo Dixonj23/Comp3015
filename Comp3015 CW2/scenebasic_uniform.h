@@ -8,7 +8,6 @@
 
 #include <vector>
 #include <array>
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -16,6 +15,9 @@ class SceneBasic_Uniform : public Scene
 {
 private:
     GLSLProgram prog;
+    GLSLProgram blurProg;
+    GLSLProgram finalProg;
+    GLSLProgram pointShadowProg;
 
     Plane plane;
     Cube cube;
@@ -25,62 +27,102 @@ private:
 
     float tPrev;
 
-    //camera/player
+    // camera / player
     glm::vec3 cameraPos;
     glm::vec3 cameraFront;
     glm::vec3 cameraUp;
     glm::vec3 cameraRight;
     glm::vec3 worldUp;
 
-    //mirrors
+    float yaw;
+    float pitch;
+    float moveSpeed;
+    float mouseSensitivity;
+
+    bool keyW, keyA, keyS, keyD;
+    bool firstMouse;
+    float lastMouseX;
+    float lastMouseY;
+
+    // mirrors
     struct MirrorData
     {
         glm::vec3 pos;
         float angle;
         glm::vec3 scale;
     };
-
     std::vector<MirrorData> mirrors;
     int selectedMirrorIndex;
 
-    float yaw;
-    float pitch;
-    float moveSpeed;
-    float mouseSensitivity;
+    // obstacles
+    struct ObstacleData
+    {
+        glm::vec3 pos;
+        glm::vec3 scale;
+    };
+    std::vector<ObstacleData> obstacles;
 
-    bool keyW, keyA, keyS, keyD, keyQ, keyE;
-    bool firstMouse;
-    float lastMouseX;
-    float lastMouseY;
+    // simple colliders
+    struct ColliderData
+    {
+        glm::vec3 pos;
+        glm::vec3 scale;
+    };
+    std::vector<ColliderData> staticColliders;
 
+    // reactor/gameplay
     bool reactorActivated;
+    float reactorLightLevel;
 
-    //bloom
-    GLSLProgram blurProg;
-    GLSLProgram finalProg;
+    // corner fixtures / corner point lights
+    std::vector<glm::vec3> cornerLightPositions;
 
+    // bloom
     GLuint hdrFBO;
     GLuint colorBuffers[2];
     GLuint pingpongFBO[2];
     GLuint pingpongColorbuffers[2];
     GLuint rboDepth;
-
     GLuint quadVAO;
     GLuint quadVBO;
-
     bool bloomEnabled;
     float bloomExposure;
 
+    // point-shadow cubemap
+    GLuint pointShadowFBO;
+    GLuint pointShadowCube;
+    float shadowFarPlane;
+    glm::vec3 shadowLightPos;
+    std::array<glm::mat4, 6> shadowTransforms;
 
+    // core helpers
     void compile();
     void setMatrices();
+    void setPointShadowMatrices();
     void updateCameraVectors();
 
+    // bloom helpers
+    void setupBloomBuffers();
+    void setupScreenQuad();
+    void renderQuad();
+
+    // point-shadow helpers
+    void setupPointShadowMap();
+    void buildPointShadowTransforms();
+    void renderPointShadowPass();
+    void renderShadowGeometry();
+
+    // visible scene render
+    void renderSceneGeometry();
+
+    // draw helpers
     void drawCube(
         const glm::vec3& position,
         const glm::vec3& scale,
         const glm::vec3& color
     );
+
+    void drawMirror(const MirrorData& mirror, bool selected);
 
     void drawBeam(
         const glm::vec3& start,
@@ -89,11 +131,10 @@ private:
         float thickness = 0.12f
     );
 
+    // gameplay / beam logic
     glm::vec3 getMirrorNormal(float degrees);
     int findLookedAtMirror() const;
-    void drawMirror(const MirrorData& mirror, bool selected);
 
-    void drawBeamPath();
     bool rayHitsMirror(
         const glm::vec3& rayStart,
         const glm::vec3& rayDir,
@@ -118,10 +159,28 @@ private:
         glm::vec3& hitPoint
     );
 
-    void setupBloomBuffers();
-    void setupScreenQuad();
-    void renderQuad();
-    void renderSceneGeometry();
+    bool rayHitsObstacle(
+        const glm::vec3& rayStart,
+        const glm::vec3& rayDir,
+        const ObstacleData& obstacle,
+        float& hitDistance,
+        glm::vec3& hitPoint
+    );
+
+    bool findClosestHitObstacle(
+        const glm::vec3& rayStart,
+        const glm::vec3& rayDir,
+        float& hitDistance,
+        glm::vec3& hitPoint
+    );
+
+    void drawBeamPath();
+
+    // collision helpers
+    bool pointInsideAABB(const glm::vec3& p, const ColliderData& collider, float radius) const;
+    bool pointInsideMirrorOBB(const glm::vec3& p, const MirrorData& mirror, float radius) const;
+    bool pointCollidesWithScene(const glm::vec3& p, float radius) const;
+    void buildStaticColliders();
 
 public:
     SceneBasic_Uniform();
