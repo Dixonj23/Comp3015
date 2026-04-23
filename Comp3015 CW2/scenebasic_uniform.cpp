@@ -52,7 +52,11 @@ SceneBasic_Uniform::SceneBasic_Uniform()
     pointShadowFBO(0),
     pointShadowCube(0),
     shadowFarPlane(25.0f),
-    shadowLightPos(0.0f, 1.5f, 0.0f)
+    shadowLightPos(0.0f, 1.5f, 0.0f),
+    reactorWasActiveLastFrame(false),
+    reactorPulseTimer(0.0f),
+    emitterPos(-12.0f, 1.0f, 0.0f),
+    emitterAngle(0.0f)
 {
 }
 
@@ -142,12 +146,82 @@ void SceneBasic_Uniform::initScene()
     setupPointShadowMap();
     setupHUD();
 
+    initReactorParticles();
+
     blurProg.use();
     blurProg.setUniform("image", 0);
 
     finalProg.use();
     finalProg.setUniform("scene", 0);
     finalProg.setUniform("bloomBlur", 1);
+}
+
+void SceneBasic_Uniform::initReactorParticles()
+{
+    reactorParticles.clear();
+    reactorParticles.resize(80);
+
+    for (auto& p : reactorParticles)
+    {
+        respawnReactorParticle(p);
+        p.life = static_cast<float>(rand()) / RAND_MAX * p.maxLife;
+    }
+}
+
+void SceneBasic_Uniform::respawnReactorParticle(ReactorParticle& p)
+{
+    glm::vec3 reactorCenter(0.0f, 1.2f, 0.0f);
+
+    float rx = ((float)rand() / RAND_MAX - 0.5f) * 1.2f;
+    float rz = ((float)rand() / RAND_MAX - 0.5f) * 1.2f;
+    float ry = ((float)rand() / RAND_MAX) * 0.4f;
+
+    p.pos = reactorCenter + glm::vec3(rx, ry, rz);
+
+    float vx = ((float)rand() / RAND_MAX - 0.5f) * 0.25f;
+    float vz = ((float)rand() / RAND_MAX - 0.5f) * 0.25f;
+    float vy = 0.6f + ((float)rand() / RAND_MAX) * 0.8f;
+
+    p.vel = glm::vec3(vx, vy, vz);
+
+    float activeMix = reactorActivated ? 1.0f : 0.0f;
+    p.color = glm::mix(
+        glm::vec3(1.0f, 0.35f, 0.15f),
+        glm::vec3(0.35f, 0.9f, 1.0f),
+        activeMix
+    );
+
+    p.maxLife = reactorActivated ? 1.8f : 1.2f;
+    p.life = p.maxLife;
+
+    p.size = reactorActivated ? 0.08f : 0.05f;
+}
+
+void SceneBasic_Uniform::spawnReactorBurst(int count)
+{
+    glm::vec3 reactorCenter(0.0f, 1.2f, 0.0f);
+
+    for (int i = 0; i < count; ++i)
+    {
+        ReactorParticle p;
+
+        float angle = ((float)i / (float)count) * glm::two_pi<float>();
+        float radiusJitter = 0.2f + ((float)rand() / RAND_MAX) * 0.4f;
+        float upward = 1.2f + ((float)rand() / RAND_MAX) * 1.2f;
+
+        glm::vec3 outward = glm::normalize(glm::vec3(cos(angle), 0.15f, sin(angle)));
+
+        p.pos = reactorCenter + outward * radiusJitter;
+        p.vel = outward * (1.8f + ((float)rand() / RAND_MAX) * 1.5f);
+        p.vel.y += upward;
+
+        p.color = glm::vec3(0.5f, 1.0f, 1.2f);
+        p.maxLife = 1.2f;
+        p.life = p.maxLife;
+        p.size = 0.12f + ((float)rand() / RAND_MAX) * 0.06f;
+
+        reactorParticles.push_back(p);
+    }
 }
 
 void SceneBasic_Uniform::setupHUD()
@@ -643,8 +717,41 @@ void SceneBasic_Uniform::renderSceneGeometry()
         );
     }
 
-    // emitter
-    drawCube(glm::vec3(-12.0f, 1.0f, 0.0f), glm::vec3(1.5f, 2.0f, 1.5f), glm::vec3(1.0f, 0.4f, 0.2f));
+    //Emitter
+    bool emitterSelected = isLookingAtEmitter();
+
+    glm::vec3 emitterBaseColor = emitterSelected
+        ? glm::vec3(1.0f, 0.8f, 0.25f)
+        : glm::vec3(0.0f, 0.0f, 0.0f);
+
+    glm::vec3 emitterNozzleColor = emitterSelected
+        ? glm::vec3(1.0f, 0.8f, 0.25f)
+        : glm::vec3(1.0f, 1.0f, 1.0f);
+
+    // emitter base
+    prog.setUniform("IsBeam", 0);
+
+    drawCube(
+        emitterPos,
+        glm::vec3(1.5f, 2.0f, 1.5f),
+        emitterBaseColor
+    );
+
+
+    // emitter nozzle
+    prog.setUniform("UseTexture", 0);
+    prog.setUniform("SolidColor", emitterNozzleColor);
+    prog.setUniform("IsBeam", 0);
+
+
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, emitterPos + glm::vec3(0.0f, 0.6f, 0.0f));
+    model = glm::rotate(model, glm::radians(-emitterAngle), glm::vec3(0.0f, 1.0f, 0.0f));
+    model = glm::translate(model, glm::vec3(0.7f, 0.0f, 0.0f));
+    model = glm::scale(model, glm::vec3(1.0f, 0.25f, 0.25f));
+    setMatrices();
+    cube.render();
+
 
     // reactor
     prog.setUniform("IsBeam", 0);
@@ -661,6 +768,9 @@ void SceneBasic_Uniform::renderSceneGeometry()
 
     // beams
     drawBeamPath();
+
+    //particles
+    drawReactorParticles();
 }
 
 void SceneBasic_Uniform::updateCameraVectors()
@@ -693,22 +803,89 @@ void SceneBasic_Uniform::renderHUD()
     std::string reactorText =
         reactorActivated ? "REACTOR: ONLINE" : "REACTOR: OFFLINE";
 
-    std::string mirrorText =
-        (selectedMirrorIndex >= 0)
-        ? "MIRROR: " + std::to_string(selectedMirrorIndex + 1)
-        : "MIRROR: NONE";
+    bool emitterSelected = isLookingAtEmitter();
 
-    std::string controlsText = "Q / E - ROTATE MIRROR";
+    std::string targetText;
+    if (emitterSelected)
+    {
+        targetText = "TARGET: EMITTER";
+    }
+    else if (selectedMirrorIndex >= 0)
+    {
+        targetText = "TARGET: MIRROR " + std::to_string(selectedMirrorIndex + 1);
+    }
+    else
+    {
+        targetText = "TARGET: NONE";
+    }
+
+    std::string controlsText = "Q / E - ROTATE TARGET";
 
     glm::vec3 reactorColor =
         reactorActivated ? glm::vec3(0.4f, 1.0f, 1.0f)
         : glm::vec3(1.0f, 0.3f, 0.3f);
 
+    glm::vec3 targetColor =
+        emitterSelected ? glm::vec3(1.0f, 0.85f, 0.3f) :
+        (selectedMirrorIndex >= 0 ? glm::vec3(1.0f, 1.0f, 1.0f)
+            : glm::vec3(0.7f, 0.7f, 0.7f));
+
+    drawText(hudVAO, hudVBO, hudProg, targetText, 20, 90, 1.6f, targetColor, width, height);
+
     drawText(hudVAO, hudVBO, hudProg, reactorText, 20, 40, 2.0f, reactorColor, width, height);
-    drawText(hudVAO, hudVBO, hudProg, mirrorText, 20, 90, 1.6f, glm::vec3(1.0f, 1.0f, 1.0f), width, height);
-    drawText(hudVAO, hudVBO, hudProg, controlsText, 20, 140, 1.4f, glm::vec3(0.8f, 0.8f, 0.8f), width, height);
+    drawText(hudVAO, hudVBO, hudProg, targetText, 20, 520, 1.6f, targetColor, width, height);
+    drawText(hudVAO, hudVBO, hudProg, controlsText, 20, 550, 1.4f, glm::vec3(0.8f, 0.8f, 0.8f), width, height);
 
     glEnable(GL_DEPTH_TEST);
+}
+
+void SceneBasic_Uniform::updateReactorParticles(float dt)
+{
+    for (auto& p : reactorParticles)
+    {
+        p.life -= dt;
+
+        if (p.life <= 0.0f)
+        {
+            respawnReactorParticle(p);
+            continue;
+        }
+
+        p.pos += p.vel * dt;
+
+        //outward drift
+        p.vel.x *= 0.995f;
+        p.vel.z *= 0.995f;
+
+        //lift variation
+        p.vel.y += reactorActivated ? 0.15f * dt : 0.05f * dt;
+    }
+}
+
+void SceneBasic_Uniform::drawReactorParticles()
+{
+    prog.setUniform("UseTexture", 0);
+    prog.setUniform("IsBeam", 0);
+
+    for (const auto& p : reactorParticles)
+    {
+        float alpha = glm::clamp(p.life / p.maxLife, 0.0f, 1.0f);
+
+        glm::vec3 color = p.color * (0.4f + 0.6f * alpha);
+        float emissive = reactorActivated
+            ? (1.8f * alpha + 0.6f)
+            : (1.0f * alpha + 0.2f);
+
+        prog.setUniform("EmissiveStrength", emissive);
+
+        drawCube(
+            p.pos,
+            glm::vec3(p.size),
+            color
+        );
+    }
+
+    prog.setUniform("EmissiveStrength", 0.0f);
 }
 
 void SceneBasic_Uniform::update(float t)
@@ -716,6 +893,8 @@ void SceneBasic_Uniform::update(float t)
     float deltaT = t - tPrev;
     if (tPrev == 0.0f) deltaT = 0.0f;
     tPrev = t;
+
+    updateReactorParticles(deltaT);
 
     buildStaticColliders();
 
@@ -758,6 +937,22 @@ void SceneBasic_Uniform::update(float t)
     selectedMirrorIndex = findLookedAtMirror();
 
     view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+
+
+    bool emitterSelected = isLookingAtEmitter();
+
+    if (emitterSelected)
+    {
+        float rotateSpeed = 60.0f * deltaT;
+        if (keyQ) emitterAngle -= rotateSpeed;
+        if (keyE) emitterAngle += rotateSpeed;
+    }
+    else if (selectedMirrorIndex >= 0)
+    {
+        float rotateSpeed = 60.0f * deltaT;
+        if (keyQ) mirrors[selectedMirrorIndex].angle -= rotateSpeed;
+        if (keyE) mirrors[selectedMirrorIndex].angle += rotateSpeed;
+    }
 }
 
 void SceneBasic_Uniform::render()
@@ -916,16 +1111,8 @@ void SceneBasic_Uniform::keyInput(int key, int action)
     case GLFW_KEY_A: keyA = pressed; break;
     case GLFW_KEY_S: keyS = pressed; break;
     case GLFW_KEY_D: keyD = pressed; break;
-
-    case GLFW_KEY_Q:
-        if (pressed && selectedMirrorIndex >= 0)
-            mirrors[selectedMirrorIndex].angle -= 0.1f;
-        break;
-
-    case GLFW_KEY_E:
-        if (pressed && selectedMirrorIndex >= 0)
-            mirrors[selectedMirrorIndex].angle += 0.1f;
-        break;
+    case GLFW_KEY_Q: keyQ = pressed; break;
+    case GLFW_KEY_E: keyE = pressed; break;
 
     default:
         break;
@@ -1254,9 +1441,11 @@ void SceneBasic_Uniform::drawBeamPath()
     glm::vec3 beamColor = pulse * glm::vec3(0.2f, 0.9f, 1.0f);
     glm::vec3 hotBeamColor = pulse * glm::vec3(1.0f, 0.5f, 0.2f);
 
-    glm::vec3 visualStart(-12.0f, 1.6f, 0.0f);
-    glm::vec3 logicStart = visualStart;
-    glm::vec3 rayDir(1.0f, 0.0f, 0.0f);
+    glm::vec3 emitterMuzzle = emitterPos + glm::vec3(0.0f, 0.6f, 0.0f) + getEmitterDirection(emitterAngle) * 1.0f;
+
+    glm::vec3 visualStart = emitterMuzzle;
+    glm::vec3 logicStart = emitterMuzzle;
+    glm::vec3 rayDir = getEmitterDirection(emitterAngle);
 
     const int maxBounces = 8;
     const float maxSegmentLength = 50.0f;
@@ -1315,4 +1504,20 @@ void SceneBasic_Uniform::drawBeamPath()
     }
 
     drawBeam(visualStart, visualStart + rayDir * 10.0f, beamColor, 0.10f);
+}
+
+glm::vec3 SceneBasic_Uniform::getEmitterDirection(float degrees)
+{
+    float r = glm::radians(degrees);
+    return glm::normalize(glm::vec3(cos(r), 0.0f, sin(r)));
+}
+
+bool SceneBasic_Uniform::isLookingAtEmitter() const
+{
+    glm::vec3 toEmitter = glm::normalize(emitterPos - cameraPos);
+    float score = glm::dot(cameraFront, toEmitter);
+    float dist = glm::length(emitterPos - cameraPos);
+
+
+    return (score > 0.95f && dist < 12.0f);
 }

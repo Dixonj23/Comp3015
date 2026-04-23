@@ -39,7 +39,7 @@ private:
     float moveSpeed;
     float mouseSensitivity;
 
-    bool keyW, keyA, keyS, keyD;
+    bool keyW, keyA, keyS, keyD, keyQ, keyE;
     bool firstMouse;
     float lastMouseX;
     float lastMouseY;
@@ -104,6 +104,13 @@ private:
     void renderHUD();
     void drawHUDLines(const std::vector<float>& verts, const glm::vec3& color);
 
+    //emitter
+    glm::vec3 emitterPos;
+    float emitterAngle;
+
+    glm::vec3 getEmitterDirection(float degrees);
+    bool isLookingAtEmitter() const;
+
     // core helpers
     void compile();
     void setMatrices();
@@ -120,6 +127,27 @@ private:
     void buildPointShadowTransforms();
     void renderPointShadowPass();
     void renderShadowGeometry();
+
+    //particles
+    struct ReactorParticle
+    {
+        glm::vec3 pos;
+        glm::vec3 vel;
+        glm::vec3 color;
+        float life;
+        float maxLife;
+        float size;
+    };
+
+    std::vector<ReactorParticle> reactorParticles;
+    bool reactorWasActiveLastFrame;
+    float reactorPulseTimer;
+
+    void initReactorParticles();
+    void updateReactorParticles(float dt);
+    void respawnReactorParticle(ReactorParticle& p);
+    void drawReactorParticles();
+    void spawnReactorBurst(int count);
 
     // visible scene render
     void renderSceneGeometry();
