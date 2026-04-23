@@ -98,6 +98,12 @@
     <None Include="point_shadow_depth.frag">
       <Filter>shaders</Filter>
     </None>
+    <None Include="hud.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="hud.frag">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="helper\scene.h">
@@ -156,6 +162,9 @@
     </ClInclude>
     <ClInclude Include="helper\texture.h">
       <Filter>helper</Filter>
+    </ClInclude>
+    <ClInclude Include="helper\stb\stb_easy_font.h">
+      <Filter>helper\stb</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

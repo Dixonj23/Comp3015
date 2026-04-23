@@ -95,6 +95,15 @@ private:
     glm::vec3 shadowLightPos;
     std::array<glm::mat4, 6> shadowTransforms;
 
+    //Hud
+    GLSLProgram hudProg;
+    GLuint hudVAO = 0;
+    GLuint hudVBO = 0;
+
+    void setupHUD();
+    void renderHUD();
+    void drawHUDLines(const std::vector<float>& verts, const glm::vec3& color);
+
     // core helpers
     void compile();
     void setMatrices();

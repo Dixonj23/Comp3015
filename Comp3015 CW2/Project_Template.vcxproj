@@ -165,6 +165,8 @@
     <None Include="bloom_blur.vert" />
     <None Include="bloom_final.frag" />
     <None Include="bloom_final.vert" />
+    <None Include="hud.frag" />
+    <None Include="hud.vert" />
     <None Include="point_shadow_depth.frag" />
     <None Include="point_shadow_depth.geom" />
     <None Include="point_shadow_depth.vert" />
@@ -186,6 +188,7 @@
     <ClInclude Include="helper\scene.h" />
     <ClInclude Include="helper\scenerunner.h" />
     <ClInclude Include="helper\skybox.h" />
+    <ClInclude Include="helper\stb\stb_easy_font.h" />
     <ClInclude Include="helper\stb\stb_image.h" />
     <ClInclude Include="helper\stb\stb_image_write.h" />
     <ClInclude Include="helper\texture.h" />

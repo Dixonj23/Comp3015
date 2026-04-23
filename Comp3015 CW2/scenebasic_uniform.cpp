@@ -5,6 +5,9 @@
 #include <string>
 #include <algorithm>
 
+#include <sstream>
+#include "helper/stb/stb_easy_font.h"
+
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -64,6 +67,10 @@ void SceneBasic_Uniform::compile()
         blurProg.compileShader("shader/bloom_blur.vert");
         blurProg.compileShader("shader/bloom_blur.frag");
         blurProg.link();
+
+        hudProg.compileShader("shader/hud.vert");
+        hudProg.compileShader("shader/hud.frag");
+        hudProg.link();
 
         finalProg.compileShader("shader/bloom_final.vert");
         finalProg.compileShader("shader/bloom_final.frag");
@@ -133,6 +140,7 @@ void SceneBasic_Uniform::initScene()
     setupBloomBuffers();
     setupScreenQuad();
     setupPointShadowMap();
+    setupHUD();
 
     blurProg.use();
     blurProg.setUniform("image", 0);
@@ -140,6 +148,21 @@ void SceneBasic_Uniform::initScene()
     finalProg.use();
     finalProg.setUniform("scene", 0);
     finalProg.setUniform("bloomBlur", 1);
+}
+
+void SceneBasic_Uniform::setupHUD()
+{
+    glGenVertexArrays(1, &hudVAO);
+    glGenBuffers(1, &hudVBO);
+
+    glBindVertexArray(hudVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, hudVBO);
+    glBufferData(GL_ARRAY_BUFFER, 1024 * 1024, nullptr, GL_DYNAMIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+
+    glBindVertexArray(0);
 }
 
 void SceneBasic_Uniform::setMatrices()
@@ -404,6 +427,89 @@ void SceneBasic_Uniform::drawBeam(
     prog.setUniform("EmissiveStrength", 0.0f);
 }
 
+void SceneBasic_Uniform::drawHUDLines(const std::vector<float>& verts, const glm::vec3& color)
+{
+    hudProg.use();
+    hudProg.setUniform("uColor", color);
+
+    glBindVertexArray(hudVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, hudVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, verts.size() * sizeof(float), verts.data());
+
+    glDrawArrays(GL_LINES, 0, (GLsizei)(verts.size() / 2));
+
+    glBindVertexArray(0);
+}
+
+void drawText(
+    GLuint vao,
+    GLuint vbo,
+    GLSLProgram& prog,
+    const std::string& text,
+    float x,
+    float y,
+    float scale,
+    const glm::vec3& color,
+    int screenW,
+    int screenH)
+{
+    char buffer[99999];
+    int num_quads = stb_easy_font_print(0, 0, (char*)text.c_str(), nullptr, buffer, sizeof(buffer));
+
+    std::vector<float> verts;
+    verts.reserve(num_quads * 6 * 2);
+
+    float invW = 2.0f / (float)screenW;
+    float invH = 2.0f / (float)screenH;
+
+    auto pushVertex = [&](float px, float py)
+        {
+            float ndcX = px * invW - 1.0f;
+            float ndcY = 1.0f - py * invH;
+
+            verts.push_back(ndcX);
+            verts.push_back(ndcY);
+        };
+
+    unsigned char* ptr = (unsigned char*)buffer;
+
+    for (int i = 0; i < num_quads; ++i)
+    {
+        float* quad = (float*)(ptr + i * 64);
+
+        float x0 = quad[0] * scale + x;
+        float y0 = quad[1] * scale + y;
+
+        float x1 = quad[4] * scale + x;
+        float y1 = quad[5] * scale + y;
+
+        float x2 = quad[8] * scale + x;
+        float y2 = quad[9] * scale + y;
+
+        float x3 = quad[12] * scale + x;
+        float y3 = quad[13] * scale + y;
+
+        pushVertex(x0, y0);
+        pushVertex(x1, y1);
+        pushVertex(x2, y2);
+
+        pushVertex(x0, y0);
+        pushVertex(x2, y2);
+        pushVertex(x3, y3);
+    }
+
+    prog.use();
+    prog.setUniform("uColor", color);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, verts.size() * sizeof(float), verts.data());
+
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)(verts.size() / 2));
+
+    glBindVertexArray(0);
+}
+
 void SceneBasic_Uniform::renderShadowGeometry()
 {
     pointShadowProg.use();
@@ -567,6 +673,42 @@ void SceneBasic_Uniform::updateCameraVectors()
     cameraFront = glm::normalize(front);
     cameraRight = glm::normalize(glm::cross(cameraFront, worldUp));
     cameraUp = glm::normalize(glm::cross(cameraRight, cameraFront));
+}
+
+void SceneBasic_Uniform::renderHUD()
+{
+    glDisable(GL_DEPTH_TEST);
+
+    // crosshair
+    float cx = 0.0f;
+    float cy = 0.0f;
+    float s = 0.015f;
+
+    std::vector<float> crosshair = {
+        cx - s, cy,     cx + s, cy,
+        cx, cy - s,     cx, cy + s
+    };
+    drawHUDLines(crosshair, glm::vec3(1.0f, 1.0f, 1.0f));
+
+    std::string reactorText =
+        reactorActivated ? "REACTOR: ONLINE" : "REACTOR: OFFLINE";
+
+    std::string mirrorText =
+        (selectedMirrorIndex >= 0)
+        ? "MIRROR: " + std::to_string(selectedMirrorIndex + 1)
+        : "MIRROR: NONE";
+
+    std::string controlsText = "Q / E - ROTATE MIRROR";
+
+    glm::vec3 reactorColor =
+        reactorActivated ? glm::vec3(0.4f, 1.0f, 1.0f)
+        : glm::vec3(1.0f, 0.3f, 0.3f);
+
+    drawText(hudVAO, hudVBO, hudProg, reactorText, 20, 40, 2.0f, reactorColor, width, height);
+    drawText(hudVAO, hudVBO, hudProg, mirrorText, 20, 90, 1.6f, glm::vec3(1.0f, 1.0f, 1.0f), width, height);
+    drawText(hudVAO, hudVBO, hudProg, controlsText, 20, 140, 1.4f, glm::vec3(0.8f, 0.8f, 0.8f), width, height);
+
+    glEnable(GL_DEPTH_TEST);
 }
 
 void SceneBasic_Uniform::update(float t)
@@ -740,6 +882,8 @@ void SceneBasic_Uniform::render()
 
     renderQuad();
 
+    renderHUD();
+
     glFlush();
 }
 
@@ -775,12 +919,12 @@ void SceneBasic_Uniform::keyInput(int key, int action)
 
     case GLFW_KEY_Q:
         if (pressed && selectedMirrorIndex >= 0)
-            mirrors[selectedMirrorIndex].angle -= 0.2f;
+            mirrors[selectedMirrorIndex].angle -= 0.1f;
         break;
 
     case GLFW_KEY_E:
         if (pressed && selectedMirrorIndex >= 0)
-            mirrors[selectedMirrorIndex].angle += 0.2f;
+            mirrors[selectedMirrorIndex].angle += 0.1f;
         break;
 
     default:
