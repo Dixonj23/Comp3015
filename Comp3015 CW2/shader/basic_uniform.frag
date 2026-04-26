@@ -116,6 +116,9 @@ vec3 evaluateMainLight(vec3 albedo, vec3 N, vec3 fragPos, vec3 viewDir)
 
     vec3 ambient = Light.La * albedo * Material.Ka;
 
+    // Make floor/low-light shadows readable
+    ambient *= mix(1.0, 0.35, shadow);
+
     float sDotN = max(dot(lightDir, N), 0.0);
     vec3 diffuse = Light.Ld * albedo * Material.Kd * sDotN * attenuation * (1.0 - shadow);
 

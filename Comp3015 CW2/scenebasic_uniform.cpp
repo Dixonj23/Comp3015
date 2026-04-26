@@ -22,9 +22,9 @@ using glm::mat3;
 using glm::mat4;
 using glm::vec3;
 using glm::vec4;
-
+  
 SceneBasic_Uniform::SceneBasic_Uniform()
-    : plane(30.0f, 30.0f, 1, 1),
+    : plane(50.0f, 50.0f, 1, 1),
     cube(),
     tPrev(0.0f),
     cameraPos(0.0f, 1.8f, 12.0f),
@@ -40,6 +40,8 @@ SceneBasic_Uniform::SceneBasic_Uniform()
     firstMouse(true),
     lastMouseX(0.0f),
     lastMouseY(0.0f),
+    roomSize(50.0f),
+    roomHalfSize(roomSize / 2),
     selectedMirrorIndex(-1),
     reactorActivated(false),
     reactorLightLevel(0.0f),
@@ -51,12 +53,10 @@ SceneBasic_Uniform::SceneBasic_Uniform()
     bloomExposure(0.6f),
     pointShadowFBO(0),
     pointShadowCube(0),
-    shadowFarPlane(25.0f),
-    shadowLightPos(0.0f, 1.5f, 0.0f),
+    shadowFarPlane(60.0f),
+    shadowLightPos(0.0f, 3.2f, 0.0f),
     reactorWasActiveLastFrame(false),
-    reactorPulseTimer(0.0f),
-    emitterPos(-12.0f, 1.0f, 0.0f),
-    emitterAngle(0.0f)
+    reactorPulseTimer(0.0f)
 {
 }
 
@@ -128,18 +128,7 @@ void SceneBasic_Uniform::initScene()
     cornerLightPositions.push_back(glm::vec3(-13.5f, 4.5f, 13.5f));
     cornerLightPositions.push_back(glm::vec3(13.5f, 4.5f, 13.5f));
 
-    // Mirrors
-    mirrors.push_back({ glm::vec3(-6.0f, 1.5f,  0.0f),  35.0f, glm::vec3(1.5f, 3.0f, 0.2f) });
-    mirrors.push_back({ glm::vec3(5.0f, 1.5f, -2.0f), -20.0f, glm::vec3(1.5f, 3.0f, 0.2f) });
-    mirrors.push_back({ glm::vec3(2.0f, 1.5f,  6.0f),  60.0f, glm::vec3(1.5f, 3.0f, 0.2f) });
-
-    // Obstacles
-    obstacles.push_back({ glm::vec3(-2.0f, 1.0f, -6.0f), glm::vec3(2.0f, 2.0f, 2.0f) });
-    obstacles.push_back({ glm::vec3(6.0f, 1.5f,  3.0f), glm::vec3(1.5f, 3.0f, 1.5f) });
-    obstacles.push_back({ glm::vec3(-8.0f, 0.75f, 5.0f), glm::vec3(3.0f, 1.5f, 1.0f) });
-    obstacles.push_back({ glm::vec3(3.0f, 1.0f, -9.0f), glm::vec3(2.5f, 2.0f, 2.5f) });
-
-    buildStaticColliders();
+    generateSolvableLayout(3);
 
     setupBloomBuffers();
     setupScreenQuad();
@@ -154,6 +143,464 @@ void SceneBasic_Uniform::initScene()
     finalProg.use();
     finalProg.setUniform("scene", 0);
     finalProg.setUniform("bloomBlur", 1);
+}
+
+bool SceneBasic_Uniform::tryCreateSolutionRoute(SolutionRoute& route)
+{
+    glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
+
+    for (int attempt = 0; attempt < 100; ++attempt)
+    {
+        glm::vec3 ePos = randomRoomPoint(1.0f, 5.0f);
+        glm::vec3 m1Pos = randomRoomPoint(1.5f, 5.0f);
+        glm::vec3 m2Pos = randomRoomPoint(1.5f, 5.0f);
+
+        // keep route points separated
+        if (glm::length(glm::vec2(ePos.x - m1Pos.x, ePos.z - m1Pos.z)) < 7.0f) continue;
+        if (glm::length(glm::vec2(m1Pos.x - m2Pos.x, m1Pos.z - m2Pos.z)) < 7.0f) continue;
+        if (glm::length(glm::vec2(m2Pos.x, m2Pos.z)) < 7.0f) continue;
+
+        // keep emitter away from reactor
+        if (glm::length(glm::vec2(ePos.x, ePos.z)) < 18.0f) continue;
+
+        glm::vec3 emitterMuzzle = ePos + glm::vec3(0.0f, 0.6f, 0.0f);
+
+        glm::vec3 d0 = glm::normalize(m1Pos - emitterMuzzle);
+        glm::vec3 d1 = glm::normalize(m2Pos - m1Pos);
+        glm::vec3 d2 = glm::normalize(reactorPos - m2Pos);
+
+        // reject almost-straight or impossible-looking routes
+        if (abs(glm::dot(d0, d1)) > 0.92f) continue;
+        if (abs(glm::dot(d1, d2)) > 0.92f) continue;
+
+        route.emitterPos = ePos;
+        route.emitterAngle = glm::degrees(atan2(d0.z, d0.x));
+
+        route.mirror1Pos = m1Pos;
+        route.mirror1Angle = mirrorAngleForReflection(d0, d1);
+
+        route.mirror2Pos = m2Pos;
+        route.mirror2Angle = mirrorAngleForReflection(d1, d2);
+
+        return true;
+    }
+
+    return false;
+}
+
+void SceneBasic_Uniform::generateSolvableLayout(int routeCount)
+{
+    obstacles.clear();
+    mirrors.clear();
+    guaranteedPath.clear();
+    solutionRoutes.clear();
+
+    // first route controls the actual emitter position
+    SolutionRoute mainRoute;
+    if (!tryCreateSolutionRoute(mainRoute))
+    {
+        // fallback
+        mainRoute.emitterPos = glm::vec3(-18.0f, 1.0f, -10.0f);
+        mainRoute.emitterAngle = 0.0f;
+        mainRoute.mirror1Pos = glm::vec3(-8.0f, 1.5f, -10.0f);
+        mainRoute.mirror2Pos = glm::vec3(-8.0f, 1.5f, 6.0f);
+
+        glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
+        glm::vec3 muzzle = mainRoute.emitterPos + glm::vec3(0, 0.6f, 0);
+
+        glm::vec3 d0 = glm::normalize(mainRoute.mirror1Pos - muzzle);
+        glm::vec3 d1 = glm::normalize(mainRoute.mirror2Pos - mainRoute.mirror1Pos);
+        glm::vec3 d2 = glm::normalize(reactorPos - mainRoute.mirror2Pos);
+
+        mainRoute.emitterAngle = glm::degrees(atan2(d0.z, d0.x));
+        mainRoute.mirror1Angle = mirrorAngleForReflection(d0, d1);
+        mainRoute.mirror2Angle = mirrorAngleForReflection(d1, d2);
+    }
+
+    solutionRoutes.push_back(mainRoute);
+
+    emitters.clear();
+
+    emitters.push_back({
+        mainRoute.emitterPos,
+        mainRoute.emitterAngle
+        });
+
+    // second fixed emitter
+    emitters.push_back({
+        glm::vec3(-mainRoute.emitterPos.x, 1.0f, -mainRoute.emitterPos.z),
+        mainRoute.emitterAngle + 180.0f
+        });
+
+    // add main route mirrors
+    mirrors.push_back({ mainRoute.mirror1Pos, mainRoute.mirror1Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+    mirrors.push_back({ mainRoute.mirror2Pos, mainRoute.mirror2Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+
+    glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
+    glm::vec3 muzzle = emitters[0].pos + glm::vec3(0.0f, 0.6f, 0.0f);
+
+    guaranteedPath.push_back({ muzzle, mainRoute.mirror1Pos });
+    guaranteedPath.push_back({ mainRoute.mirror1Pos, mainRoute.mirror2Pos });
+    guaranteedPath.push_back({ mainRoute.mirror2Pos, reactorPos });
+
+    // second emitter gets its own guaranteed 2-mirror path
+    glm::vec3 emitter1Muzzle = emitters[1].pos + glm::vec3(0.0f, 0.6f, 0.0f);
+
+    glm::vec3 mirror3Pos;
+    glm::vec3 mirror4Pos;
+
+    for (int attempt = 0; attempt < 100; ++attempt)
+    {
+        mirror3Pos = randomRoomPoint(1.5f, 5.0f);
+        mirror4Pos = randomRoomPoint(1.5f, 5.0f);
+
+        if (!isPositionValid(mirror3Pos, 2.5f)) continue;
+        if (!isPositionValid(mirror4Pos, 2.5f)) continue;
+
+        // make sure emitter 2's first mirror is different from emitter 1's first mirror
+        if (glm::length(glm::vec2(
+            mirror3Pos.x - mainRoute.mirror1Pos.x,
+            mirror3Pos.z - mainRoute.mirror1Pos.z
+        )) < 8.0f)
+            continue;
+
+        // make sure emitter 2's second mirror is different from emitter 1's second mirror
+        if (glm::length(glm::vec2(
+            mirror4Pos.x - mainRoute.mirror2Pos.x,
+            mirror4Pos.z - mainRoute.mirror2Pos.z
+        )) < 8.0f)
+            continue;
+
+        // make sure mirror3 and mirror4 are not basically the same mirror
+        if (glm::length(glm::vec2(
+            mirror3Pos.x - mirror4Pos.x,
+            mirror3Pos.z - mirror4Pos.z
+        )) < 7.0f)
+            continue;
+
+        break;
+    }
+
+    glm::vec3 d0b = glm::normalize(mirror3Pos - emitter1Muzzle);
+    glm::vec3 d1b = glm::normalize(mirror4Pos - mirror3Pos);
+    glm::vec3 d2b = glm::normalize(reactorPos - mirror4Pos);
+
+    emitters[1].angle = glm::degrees(atan2(d0b.z, d0b.x));
+
+    float mirror3Angle = mirrorAngleForReflection(d0b, d1b);
+    float mirror4Angle = mirrorAngleForReflection(d1b, d2b);
+
+    mirrors.push_back({ mirror3Pos, mirror3Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+    mirrors.push_back({ mirror4Pos, mirror4Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+
+    guaranteedPath.push_back({ emitter1Muzzle, mirror3Pos });
+    guaranteedPath.push_back({ mirror3Pos, mirror4Pos });
+    guaranteedPath.push_back({ mirror4Pos, reactorPos });
+
+    // optional extra routes 
+    for (int r = 1; r < routeCount; ++r)
+    {
+        SolutionRoute route;
+
+        for (int attempt = 0; attempt < 100; ++attempt)
+        {
+            if (!tryCreateSolutionRoute(route))
+                continue;
+
+            // force same emitter as main route
+            route.emitterPos = emitters[0].pos;
+            glm::vec3 routeMuzzle = emitters[0].pos + glm::vec3(0.0f, 0.6f, 0.0f);
+            glm::vec3 d0 = glm::normalize(route.mirror1Pos - routeMuzzle);
+            glm::vec3 d1 = glm::normalize(route.mirror2Pos - route.mirror1Pos);
+            glm::vec3 d2 = glm::normalize(reactorPos - route.mirror2Pos);
+
+            route.emitterAngle = glm::degrees(atan2(d0.z, d0.x));
+            route.mirror1Angle = mirrorAngleForReflection(d0, d1);
+            route.mirror2Angle = mirrorAngleForReflection(d1, d2);
+
+            // don't overlap existing mirrors
+            if (!isPositionValid(route.mirror1Pos, 2.5f)) continue;
+            if (!isPositionValid(route.mirror2Pos, 2.5f)) continue;
+
+            solutionRoutes.push_back(route);
+
+            mirrors.push_back({ route.mirror1Pos, route.mirror1Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+            mirrors.push_back({ route.mirror2Pos, route.mirror2Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+
+            guaranteedPath.push_back({ routeMuzzle, route.mirror1Pos });
+            guaranteedPath.push_back({ route.mirror1Pos, route.mirror2Pos });
+            guaranteedPath.push_back({ route.mirror2Pos, reactorPos });
+
+            break;
+        }
+    }
+
+    generateMirrors(8);       // total mirrors, includes solution mirrors
+    generateObstacles(32);    // avoids guaranteedPath
+
+    for (auto& m : mirrors)
+    {
+        float offset = -50.0f + ((float)rand() / RAND_MAX) * 100.0f;
+        m.angle += offset;
+    }
+
+    //emitterAngle += -45.0f + ((float)rand() / RAND_MAX) * 90.0f;
+
+    buildStaticColliders();
+    placePlayerNearReactor();
+}
+
+void SceneBasic_Uniform::placePlayerNearReactor()
+{
+    std::vector<glm::vec3> candidates = {
+        glm::vec3(0.0f, 1.8f, 5.0f),
+        glm::vec3(5.0f, 1.8f, 0.0f),
+        glm::vec3(0.0f, 1.8f, -5.0f),
+        glm::vec3(-5.0f, 1.8f, 0.0f),
+        glm::vec3(4.0f, 1.8f, 4.0f),
+        glm::vec3(-4.0f, 1.8f, 4.0f)
+    };
+
+    float playerRadius = 0.4f;
+
+    for (const auto& pos : candidates)
+    {
+        if (!pointCollidesWithScene(pos, playerRadius))
+        {
+            cameraPos = pos;
+            break;
+        }
+    }
+
+    glm::vec3 lookTarget(0.0f, 1.5f, 0.0f);
+    glm::vec3 dir = glm::normalize(lookTarget - cameraPos);
+
+    yaw = glm::degrees(atan2(dir.z, dir.x));
+    pitch = glm::degrees(asin(dir.y));
+
+    updateCameraVectors();
+    view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+}
+
+glm::vec3 SceneBasic_Uniform::randomRoomPoint(float y, float margin)
+{
+    float x = -roomHalfSize + margin + ((float)rand() / RAND_MAX) * ((roomHalfSize - margin) * 2.0f);
+    float z = -roomHalfSize + margin + ((float)rand() / RAND_MAX) * ((roomHalfSize - margin) * 2.0f);
+
+    return glm::vec3(x, y, z);
+}
+
+void SceneBasic_Uniform::placeSolutionMirrors()
+{
+    mirrors.clear();
+    emitters.clear();
+    guaranteedPath.clear();
+
+    glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
+
+    glm::vec3 emitter0Pos(-18.0f, 1.0f, -10.0f);
+    glm::vec3 emitter1Pos(18.0f, 1.0f, 10.0f);
+
+    glm::vec3 mirror1Pos(-8.0f, 1.5f, -10.0f);
+    glm::vec3 mirror2Pos(-8.0f, 1.5f, 6.0f);
+
+    glm::vec3 mirror3Pos(8.0f, 1.5f, 10.0f);
+    glm::vec3 mirror4Pos(8.0f, 1.5f, -6.0f);
+
+    glm::vec3 emitter0Muzzle = emitter0Pos + glm::vec3(0.0f, 0.6f, 0.0f);
+    glm::vec3 emitter1Muzzle = emitter1Pos + glm::vec3(0.0f, 0.6f, 0.0f);
+
+    // route A: emitter 0 -> mirror 1 -> mirror 2 -> reactor
+    glm::vec3 d0_a = glm::normalize(mirror1Pos - emitter0Muzzle);
+    glm::vec3 d1_a = glm::normalize(mirror2Pos - mirror1Pos);
+    glm::vec3 d2_a = glm::normalize(reactorPos - mirror2Pos);
+
+    float emitter0Angle = glm::degrees(atan2(d0_a.z, d0_a.x));
+    float mirror1Angle = mirrorAngleForReflection(d0_a, d1_a);
+    float mirror2Angle = mirrorAngleForReflection(d1_a, d2_a);
+
+    // route B: emitter 1 -> mirror 3 -> mirror 4 -> reactor
+    glm::vec3 d0_b = glm::normalize(mirror3Pos - emitter1Muzzle);
+    glm::vec3 d1_b = glm::normalize(mirror4Pos - mirror3Pos);
+    glm::vec3 d2_b = glm::normalize(reactorPos - mirror4Pos);
+
+    float emitter1Angle = glm::degrees(atan2(d0_b.z, d0_b.x));
+    float mirror3Angle = mirrorAngleForReflection(d0_b, d1_b);
+    float mirror4Angle = mirrorAngleForReflection(d1_b, d2_b);
+
+    emitters.push_back({ emitter0Pos, emitter0Angle });
+    emitters.push_back({ emitter1Pos, emitter1Angle });
+
+    mirrors.push_back({ mirror1Pos, mirror1Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+    mirrors.push_back({ mirror2Pos, mirror2Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+    mirrors.push_back({ mirror3Pos, mirror3Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+    mirrors.push_back({ mirror4Pos, mirror4Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
+
+    guaranteedPath.push_back({ emitter0Muzzle, mirror1Pos });
+    guaranteedPath.push_back({ mirror1Pos, mirror2Pos });
+    guaranteedPath.push_back({ mirror2Pos, reactorPos });
+
+    guaranteedPath.push_back({ emitter1Muzzle, mirror3Pos });
+    guaranteedPath.push_back({ mirror3Pos, mirror4Pos });
+    guaranteedPath.push_back({ mirror4Pos, reactorPos });
+}
+
+void SceneBasic_Uniform::generateMirrors(int count)
+{
+    // Keep the first 2 solution mirrors
+    int existing = (int)mirrors.size();
+    float roomHalfSize = roomSize / 2;
+
+    for (int i = existing; i < count; ++i)
+    {
+        for (int attempt = 0; attempt < 80; ++attempt)
+        {
+            float spawnRange = roomHalfSize * 1.6f;
+
+            glm::vec3 pos(
+                ((float)rand() / RAND_MAX - 0.5f) * spawnRange,
+                1.5f,
+                ((float)rand() / RAND_MAX - 0.5f) * spawnRange
+            );
+
+            if (!isPositionValid(pos, 2.5f))
+                continue;
+
+            if (isNearBeamPath(pos, 2.0f))
+                continue;
+
+            float angle = ((float)rand() / RAND_MAX) * 360.0f;
+
+            mirrors.push_back({
+                pos,
+                angle,
+                glm::vec3(1.5f, 3.0f, 0.2f)
+            });
+
+            break;
+        }
+    }
+}
+
+void SceneBasic_Uniform::generateObstacles(int count)
+{
+    obstacles.clear();
+    float roomHalfSize = roomSize / 2;
+
+    for (int i = 0; i < count; ++i)
+    {
+        for (int attempt = 0; attempt < 100; ++attempt)
+        {
+            float spawnRange = roomHalfSize * 1.75f;
+
+            glm::vec3 scale(
+                1.0f + ((float)rand() / RAND_MAX) * 2.5f,
+                1.0f + ((float)rand() / RAND_MAX) * 3.0f,
+                1.0f + ((float)rand() / RAND_MAX) * 2.5f
+            );
+
+            glm::vec3 pos(
+                ((float)rand() / RAND_MAX - 0.5f) * spawnRange,
+                scale.y * 0.5f,
+                ((float)rand() / RAND_MAX - 0.5f) * spawnRange
+            );
+
+            if (!isPositionValid(pos, 2.0f))
+                continue;
+
+            // keep beam solution open
+            if (isNearBeamPath(pos, 2.8f))
+                continue;
+
+            // keep rough player navigation corridor around reactor clear
+            if (glm::length(glm::vec2(pos.x, pos.z)) < 5.0f)
+                continue;
+
+            obstacles.push_back({ pos, scale });
+            break;
+        }
+    }
+}
+
+float SceneBasic_Uniform::distancePointToSegmentXZ(
+    const glm::vec3& p,
+    const glm::vec3& a,
+    const glm::vec3& b) const
+{
+    glm::vec2 p2(p.x, p.z);
+    glm::vec2 a2(a.x, a.z);
+    glm::vec2 b2(b.x, b.z);
+
+    glm::vec2 ab = b2 - a2;
+    float lenSq = glm::dot(ab, ab);
+
+    if (lenSq < 0.0001f)
+        return glm::length(p2 - a2);
+
+    float t = glm::dot(p2 - a2, ab) / lenSq;
+    t = glm::clamp(t, 0.0f, 1.0f);
+
+    glm::vec2 closest = a2 + ab * t;
+    return glm::length(p2 - closest);
+}
+
+bool SceneBasic_Uniform::isNearBeamPath(const glm::vec3& pos, float radius) const
+{
+    for (const auto& seg : guaranteedPath)
+    {
+        if (distancePointToSegmentXZ(pos, seg.start, seg.end) < radius)
+            return true;
+    }
+
+    return false;
+}
+
+float SceneBasic_Uniform::mirrorAngleForReflection(
+    const glm::vec3& incomingDir,
+    const glm::vec3& outgoingDir)
+{
+    glm::vec3 inDir = glm::normalize(glm::vec3(incomingDir.x, 0.0f, incomingDir.z));
+    glm::vec3 outDir = glm::normalize(glm::vec3(outgoingDir.x, 0.0f, outgoingDir.z));
+
+    // Mirror normal bisects incoming opposite direction and outgoing direction
+    glm::vec3 normal = glm::normalize((-inDir) + outDir);
+
+    float angle = glm::degrees(atan2(normal.x, normal.z));
+    return angle;
+}
+
+bool SceneBasic_Uniform::isPositionValid(const glm::vec3& pos, float radius)
+{
+    glm::vec2 p(pos.x, pos.z);
+
+    // keep away from walls
+    if (abs(pos.x) > roomHalfSize - 3.0f || abs(pos.z) > roomHalfSize - 3.0f)
+        return false;
+
+    // avoid reactor
+    if (glm::length(p - glm::vec2(0.0f, 0.0f)) < 4.0f + radius)
+        return false;
+
+    // avoid emitters
+    for (const auto& emitter : emitters)
+    {
+        if (glm::length(p - glm::vec2(emitter.pos.x, emitter.pos.z)) < 3.0f + radius)
+            return false;
+    }
+
+    for (const auto& o : obstacles)
+    {
+        if (glm::length(p - glm::vec2(o.pos.x, o.pos.z)) < 3.0f + radius)
+            return false;
+    }
+
+    for (const auto& m : mirrors)
+    {
+        if (glm::length(p - glm::vec2(m.pos.x, m.pos.z)) < 3.0f + radius)
+            return false;
+    }
+
+    return true;
 }
 
 void SceneBasic_Uniform::initReactorParticles()
@@ -339,7 +786,7 @@ void SceneBasic_Uniform::renderQuad()
 
 void SceneBasic_Uniform::setupPointShadowMap()
 {
-    const unsigned int SHADOW_SIZE = 1024;
+    const unsigned int SHADOW_SIZE = 2048;
 
     glGenFramebuffers(1, &pointShadowFBO);
 
@@ -392,10 +839,11 @@ void SceneBasic_Uniform::buildPointShadowTransforms()
 
 void SceneBasic_Uniform::renderPointShadowPass()
 {
-    const unsigned int SHADOW_SIZE = 1024;
+    const unsigned int SHADOW_SIZE = 2048;
 
-    shadowLightPos = glm::vec3(0.0f, 2.5f, 0.0f); // reactor center
-    shadowFarPlane = 25.0f;
+    shadowLightPos = glm::vec3(0.0f, 3.2f, 0.0f);
+    shadowFarPlane = 60.0f;
+
     buildPointShadowTransforms();
 
     glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
@@ -597,17 +1045,29 @@ void SceneBasic_Uniform::renderShadowGeometry()
             cube.render();
         };
 
+    float roomHalfSize = roomSize / 2;
+    float wallHeight = 5.0f;
+
     // floor
     model = glm::mat4(1.0f);
     setPointShadowMatrices();
     plane.render();
 
     // walls + ceiling
-    drawShadowCube(glm::vec3(0.0f, 2.5f, -15.0f), glm::vec3(30.0f, 5.0f, 0.5f));
-    drawShadowCube(glm::vec3(0.0f, 2.5f, 15.0f), glm::vec3(30.0f, 5.0f, 0.5f));
-    drawShadowCube(glm::vec3(-15.0f, 2.5f, 0.0f), glm::vec3(0.5f, 5.0f, 30.0f));
-    drawShadowCube(glm::vec3(15.0f, 2.5f, 0.0f), glm::vec3(0.5f, 5.0f, 30.0f));
-    drawShadowCube(glm::vec3(0.0f, 5.0f, 0.0f), glm::vec3(30.0f, 0.5f, 30.0f));
+    drawShadowCube(glm::vec3(0.0f, wallHeight * 0.5f, -roomHalfSize),
+        glm::vec3(roomSize, wallHeight, 0.5f));
+
+    drawShadowCube(glm::vec3(0.0f, wallHeight * 0.5f, roomHalfSize),
+        glm::vec3(roomSize, wallHeight, 0.5f));
+
+    drawShadowCube(glm::vec3(-roomHalfSize, wallHeight * 0.5f, 0.0f),
+        glm::vec3(0.5f, wallHeight, roomSize));
+
+    drawShadowCube(glm::vec3(roomHalfSize, wallHeight * 0.5f, 0.0f),
+        glm::vec3(0.5f, wallHeight, roomSize));
+
+    drawShadowCube(glm::vec3(0.0f, wallHeight, 0.0f),
+        glm::vec3(roomSize, 0.5f, roomSize));
 
     // obstacles
     for (const auto& obstacle : obstacles)
@@ -632,7 +1092,9 @@ void SceneBasic_Uniform::renderShadowGeometry()
     drawShadowCube(glm::vec3(-12.0f, 1.0f, 0.0f), glm::vec3(1.5f, 2.0f, 1.5f));
 
     // reactor
-    drawShadowCube(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(2.0f, 2.0f, 2.0f));
+    //drawShadowCube(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(2.0f, 2.0f, 2.0f));
+
+    //reactor stand
     drawShadowCube(glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(4.0f, 0.5f, 4.0f));
 }
 
@@ -692,11 +1154,17 @@ void SceneBasic_Uniform::renderSceneGeometry()
     plane.render();
 
     // room
-    drawCube(glm::vec3(0.0f, 2.5f, -15.0f), glm::vec3(30.0f, 5.0f, 0.5f), glm::vec3(0.45f, 0.45f, 0.5f));
-    drawCube(glm::vec3(0.0f, 2.5f, 15.0f), glm::vec3(30.0f, 5.0f, 0.5f), glm::vec3(0.45f, 0.45f, 0.5f));
-    drawCube(glm::vec3(-15.0f, 2.5f, 0.0f), glm::vec3(0.5f, 5.0f, 30.0f), glm::vec3(0.4f, 0.4f, 0.45f));
-    drawCube(glm::vec3(15.0f, 2.5f, 0.0f), glm::vec3(0.5f, 5.0f, 30.0f), glm::vec3(0.4f, 0.4f, 0.45f));
-    drawCube(glm::vec3(0.0f, 5.0f, 0.0f), glm::vec3(30.0f, 0.5f, 30.0f), glm::vec3(0.35f, 0.35f, 0.4f));
+    float roomHalfSize = roomSize / 2;
+    float wallHeight = 5.0f;
+    glm::vec3 wallColor = glm::vec3(1.0f, 1.0f, 1.0f);
+
+    drawCube(glm::vec3(0.0f, 2.5f, -roomHalfSize), glm::vec3(roomSize, wallHeight, 0.5f), wallColor);
+    drawCube(glm::vec3(0.0f, 2.5f, roomHalfSize), glm::vec3(roomSize, wallHeight, 0.5f), wallColor);
+    drawCube(glm::vec3(-roomHalfSize, 2.5f, 0.0f), glm::vec3(0.5f, wallHeight, roomSize), wallColor);
+    drawCube(glm::vec3(roomHalfSize, 2.5f, 0.0f), glm::vec3(0.5f, wallHeight, roomSize), wallColor);
+
+    //ceiling
+    drawCube(glm::vec3(0.0f, wallHeight, 0.0f), glm::vec3(roomSize, 0.5f, roomSize), glm::vec3(0.35f, 0.35f, 0.4f));
 
     // obstacles
     prog.setUniform("IsBeam", 0);
@@ -717,40 +1185,40 @@ void SceneBasic_Uniform::renderSceneGeometry()
         );
     }
 
-    //Emitter
-    bool emitterSelected = isLookingAtEmitter();
+    //Emitters
+    for (const auto& emitter : emitters)
+    {
+        glm::vec3 emitterBaseColor = glm::vec3(1.0f, 0.8f, 0.25f);
+        glm::vec3 emitterNozzleColor = glm::vec3(1.0f, 1.0f, 1.0f);
 
-    glm::vec3 emitterBaseColor = emitterSelected
-        ? glm::vec3(1.0f, 0.8f, 0.25f)
-        : glm::vec3(0.0f, 0.0f, 0.0f);
+        prog.setUniform("IsBeam", 0);
+        prog.setUniform("EmissiveStrength", 0.0f);
 
-    glm::vec3 emitterNozzleColor = emitterSelected
-        ? glm::vec3(1.0f, 0.8f, 0.25f)
-        : glm::vec3(1.0f, 1.0f, 1.0f);
+        drawCube(
+            emitter.pos,
+            glm::vec3(1.5f, 2.0f, 1.5f),
+            emitterBaseColor
+        );
 
-    // emitter base
-    prog.setUniform("IsBeam", 0);
+        glm::vec3 emitterDir = getEmitterDirection(emitter.angle);
+        glm::vec3 nozzlePos =
+            emitter.pos +
+            glm::vec3(0.0f, 0.6f, 0.0f) +
+            emitterDir * 0.7f;
 
-    drawCube(
-        emitterPos,
-        glm::vec3(1.5f, 2.0f, 1.5f),
-        emitterBaseColor
-    );
+        prog.setUniform("UseTexture", 0);
+        prog.setUniform("SolidColor", emitterNozzleColor);
+        prog.setUniform("IsBeam", 0);
+        prog.setUniform("EmissiveStrength", 0.0f);
 
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, nozzlePos);
+        model = glm::rotate(model, glm::radians(-emitter.angle), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(1.0f, 0.25f, 0.25f));
 
-    // emitter nozzle
-    prog.setUniform("UseTexture", 0);
-    prog.setUniform("SolidColor", emitterNozzleColor);
-    prog.setUniform("IsBeam", 0);
-
-
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, emitterPos + glm::vec3(0.0f, 0.6f, 0.0f));
-    model = glm::rotate(model, glm::radians(-emitterAngle), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::translate(model, glm::vec3(0.7f, 0.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(1.0f, 0.25f, 0.25f));
-    setMatrices();
-    cube.render();
+        setMatrices();
+        cube.render();
+    }
 
 
     // reactor
@@ -767,7 +1235,7 @@ void SceneBasic_Uniform::renderSceneGeometry()
     drawCube(glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(4.0f, 0.5f, 4.0f), glm::vec3(0.25f, 0.25f, 0.3f));
 
     // beams
-    drawBeamPath();
+    drawAllBeamPaths();
 
     //particles
     drawReactorParticles();
@@ -801,23 +1269,14 @@ void SceneBasic_Uniform::renderHUD()
     drawHUDLines(crosshair, glm::vec3(1.0f, 1.0f, 1.0f));
 
     std::string reactorText =
-        reactorActivated ? "REACTOR: ONLINE" : "REACTOR: OFFLINE";
+        reactorActivated
+        ? "REACTOR: ONLINE"
+        : "REACTOR: " + std::to_string(reactorBeamHits) + "/2 BEAMS";
 
-    bool emitterSelected = isLookingAtEmitter();
-
-    std::string targetText;
-    if (emitterSelected)
-    {
-        targetText = "TARGET: EMITTER";
-    }
-    else if (selectedMirrorIndex >= 0)
-    {
-        targetText = "TARGET: MIRROR " + std::to_string(selectedMirrorIndex + 1);
-    }
-    else
-    {
-        targetText = "TARGET: NONE";
-    }
+    std::string targetText =
+        (selectedMirrorIndex >= 0)
+        ? "TARGET: MIRROR " + std::to_string(selectedMirrorIndex + 1)
+        : "TARGET: NONE";
 
     std::string controlsText = "Q / E - ROTATE TARGET";
 
@@ -825,10 +1284,8 @@ void SceneBasic_Uniform::renderHUD()
         reactorActivated ? glm::vec3(0.4f, 1.0f, 1.0f)
         : glm::vec3(1.0f, 0.3f, 0.3f);
 
-    glm::vec3 targetColor =
-        emitterSelected ? glm::vec3(1.0f, 0.85f, 0.3f) :
-        (selectedMirrorIndex >= 0 ? glm::vec3(1.0f, 1.0f, 1.0f)
-            : glm::vec3(0.7f, 0.7f, 0.7f));
+    glm::vec3 targetColor = selectedMirrorIndex >= 0 ? glm::vec3(1.0f, 1.0f, 1.0f)
+            : glm::vec3(0.7f, 0.7f, 0.7f);
 
     drawText(hudVAO, hudVBO, hudProg, targetText, 20, 90, 1.6f, targetColor, width, height);
 
@@ -911,8 +1368,10 @@ void SceneBasic_Uniform::update(float t)
     if (keyA) proposedPos -= cameraRight * velocity;
     if (keyD) proposedPos += cameraRight * velocity;
 
-    proposedPos.x = glm::clamp(proposedPos.x, -14.0f, 14.0f);
-    proposedPos.z = glm::clamp(proposedPos.z, -14.0f, 14.0f);
+    float roomHalfSize = roomSize / 2;
+
+    proposedPos.x = glm::clamp(proposedPos.x, -roomHalfSize + 1.0f, roomHalfSize - 1.0f);
+    proposedPos.z = glm::clamp(proposedPos.z, -roomHalfSize + 1.0f, roomHalfSize - 1.0f);
 
     if (proposedPos.y < 1.0f) proposedPos.y = 1.0f;
     if (proposedPos.y > 2.5f) proposedPos.y = 2.5f;
@@ -939,17 +1398,10 @@ void SceneBasic_Uniform::update(float t)
     view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
 
-    bool emitterSelected = isLookingAtEmitter();
+    if (selectedMirrorIndex >= 0)
+    {
+        float rotateSpeed = 60.0f * deltaT;
 
-    if (emitterSelected)
-    {
-        float rotateSpeed = 60.0f * deltaT;
-        if (keyQ) emitterAngle -= rotateSpeed;
-        if (keyE) emitterAngle += rotateSpeed;
-    }
-    else if (selectedMirrorIndex >= 0)
-    {
-        float rotateSpeed = 60.0f * deltaT;
         if (keyQ) mirrors[selectedMirrorIndex].angle -= rotateSpeed;
         if (keyE) mirrors[selectedMirrorIndex].angle += rotateSpeed;
     }
@@ -957,10 +1409,10 @@ void SceneBasic_Uniform::update(float t)
 
 void SceneBasic_Uniform::render()
 {
-    // 1) point-shadow pass
+    //point-shadow pass
     renderPointShadowPass();
 
-    // 2) visible HDR scene pass
+    //visible HDR scene pass
     glViewport(0, 0, width, height);
     glBindFramebuffer(GL_FRAMEBUFFER, hdrFBO);
     glClearColor(0.05f, 0.05f, 0.08f, 1.0f);
@@ -969,7 +1421,8 @@ void SceneBasic_Uniform::render()
     prog.use();
 
     // main reactor point light
-    shadowLightPos = glm::vec3(0.0f, 1.5f, 0.0f);
+    shadowLightPos = glm::vec3(0.0f, 3.2f, 0.0f);
+    shadowFarPlane = 60.0f;
 
     glm::vec3 ambientOff = glm::vec3(0.13f, 0.13f, 0.14f);
     glm::vec3 ambientOn = glm::vec3(0.20f, 0.22f, 0.26f);
@@ -1114,6 +1567,13 @@ void SceneBasic_Uniform::keyInput(int key, int action)
     case GLFW_KEY_Q: keyQ = pressed; break;
     case GLFW_KEY_E: keyE = pressed; break;
 
+    case GLFW_KEY_R:
+        if (pressed)
+        {
+            generateSolvableLayout(3);
+        }
+        break;
+
     default:
         break;
     }
@@ -1204,10 +1664,17 @@ void SceneBasic_Uniform::buildStaticColliders()
 {
     staticColliders.clear();
 
+    //reactor
     staticColliders.push_back({ glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(2.0f, 2.0f, 2.0f) });
     staticColliders.push_back({ glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(4.0f, 0.5f, 4.0f) });
 
-    staticColliders.push_back({ glm::vec3(-12.0f, 1.0f, 0.0f), glm::vec3(1.5f, 2.0f, 1.5f) });
+    for (const auto& emitter : emitters)
+    {
+        staticColliders.push_back({
+            emitter.pos,
+            glm::vec3(1.5f, 2.0f, 1.5f)
+            });
+    }
 
     for (const auto& mirror : mirrors)
     {
@@ -1430,9 +1897,8 @@ bool SceneBasic_Uniform::findClosestHitObstacle(
     return found;
 }
 
-void SceneBasic_Uniform::drawBeamPath()
+bool SceneBasic_Uniform::drawBeamPathFromEmitter(const EmitterData& emitter)
 {
-    reactorActivated = false;
 
     glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
     float reactorRadius = 1.5f;
@@ -1441,11 +1907,14 @@ void SceneBasic_Uniform::drawBeamPath()
     glm::vec3 beamColor = pulse * glm::vec3(0.2f, 0.9f, 1.0f);
     glm::vec3 hotBeamColor = pulse * glm::vec3(1.0f, 0.5f, 0.2f);
 
-    glm::vec3 emitterMuzzle = emitterPos + glm::vec3(0.0f, 0.6f, 0.0f) + getEmitterDirection(emitterAngle) * 1.0f;
+    glm::vec3 emitterMuzzle =
+        emitter.pos +
+        glm::vec3(0.0f, 0.6f, 0.0f) +
+        getEmitterDirection(emitter.angle) * 1.0f;
 
     glm::vec3 visualStart = emitterMuzzle;
     glm::vec3 logicStart = emitterMuzzle;
-    glm::vec3 rayDir = getEmitterDirection(emitterAngle);
+    glm::vec3 rayDir = getEmitterDirection(emitter.angle);
 
     const int maxBounces = 8;
     const float maxSegmentLength = 50.0f;
@@ -1472,15 +1941,14 @@ void SceneBasic_Uniform::drawBeamPath()
         if (hitReactor)
         {
             drawBeam(visualStart, reactorHitPoint, (bounce == 0 ? hotBeamColor : beamColor), 0.10f);
-            reactorActivated = true;
-            return;
+            return true;
         }
 
         bool obstacleIsFirst = hitObstacle && obstacleHitDistance <= mirrorHitDistance;
         if (obstacleIsFirst)
         {
             drawBeam(visualStart, obstacleHitPoint, (bounce == 0 ? hotBeamColor : beamColor), 0.10f);
-            return;
+            return false;
         }
 
         if (mirrorIndex >= 0)
@@ -1500,24 +1968,30 @@ void SceneBasic_Uniform::drawBeamPath()
         }
 
         drawBeam(visualStart, visualStart + rayDir * maxSegmentLength, (bounce == 0 ? hotBeamColor : beamColor), 0.10f);
-        return;
+        return false;
     }
 
     drawBeam(visualStart, visualStart + rayDir * 10.0f, beamColor, 0.10f);
+    return false;
+}
+
+void SceneBasic_Uniform::drawAllBeamPaths()
+{
+    reactorBeamHits = 0;
+
+    for (const auto& emitter : emitters)
+    {
+        bool hit = drawBeamPathFromEmitter(emitter);
+
+        if (hit)
+            reactorBeamHits++;
+    }
+
+    reactorActivated = reactorBeamHits >= 2;
 }
 
 glm::vec3 SceneBasic_Uniform::getEmitterDirection(float degrees)
 {
     float r = glm::radians(degrees);
     return glm::normalize(glm::vec3(cos(r), 0.0f, sin(r)));
-}
-
-bool SceneBasic_Uniform::isLookingAtEmitter() const
-{
-    glm::vec3 toEmitter = glm::normalize(emitterPos - cameraPos);
-    float score = glm::dot(cameraFront, toEmitter);
-    float dist = glm::length(emitterPos - cameraPos);
-
-
-    return (score > 0.95f && dist < 12.0f);
 }

@@ -131,6 +131,7 @@ private:
             scene.keyInput(GLFW_KEY_E, glfwGetKey(window, GLFW_KEY_E));
             scene.keyInput(GLFW_KEY_J, glfwGetKey(window, GLFW_KEY_J));
             scene.keyInput(GLFW_KEY_L, glfwGetKey(window, GLFW_KEY_L));
+            scene.keyInput(GLFW_KEY_R, glfwGetKey(window, GLFW_KEY_R));
 
             double mouseX, mouseY;
             glfwGetCursorPos(window, &mouseX, &mouseY);

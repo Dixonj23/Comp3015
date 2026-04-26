@@ -44,6 +44,11 @@ private:
     float lastMouseX;
     float lastMouseY;
 
+    //Room
+
+    float roomSize;
+    float roomHalfSize;
+
     // mirrors
     struct MirrorData
     {
@@ -61,6 +66,10 @@ private:
         glm::vec3 scale;
     };
     std::vector<ObstacleData> obstacles;
+
+    void generateObstacles(int count);
+    void generateMirrors(int count);
+    bool isPositionValid(const glm::vec3& pos, float radius);
 
     // simple colliders
     struct ColliderData
@@ -105,11 +114,48 @@ private:
     void drawHUDLines(const std::vector<float>& verts, const glm::vec3& color);
 
     //emitter
-    glm::vec3 emitterPos;
-    float emitterAngle;
+    struct EmitterData
+    {
+        glm::vec3 pos;
+        float angle;
+    };
+
+    std::vector<EmitterData> emitters;
+    int reactorBeamHits;
 
     glm::vec3 getEmitterDirection(float degrees);
-    bool isLookingAtEmitter() const;
+
+    //room generation
+    struct BeamSegment
+    {
+        glm::vec3 start;
+        glm::vec3 end;
+    };
+
+    std::vector<BeamSegment> guaranteedPath;
+
+    struct SolutionRoute
+    {
+        glm::vec3 emitterPos;
+        float emitterAngle;
+
+        glm::vec3 mirror1Pos;
+        float mirror1Angle;
+
+        glm::vec3 mirror2Pos;
+        float mirror2Angle;
+    };
+
+    std::vector<SolutionRoute> solutionRoutes;
+
+    glm::vec3 randomRoomPoint(float y, float margin);
+    bool tryCreateSolutionRoute(SolutionRoute& route);
+    void generateSolvableLayout(int routeCount);
+    void placeSolutionMirrors();
+    bool isNearBeamPath(const glm::vec3& pos, float radius) const;
+    float distancePointToSegmentXZ(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b) const;
+    float mirrorAngleForReflection(const glm::vec3& incomingDir, const glm::vec3& outgoingDir);
+    void placePlayerNearReactor();
 
     // core helpers
     void compile();
@@ -211,7 +257,8 @@ private:
         glm::vec3& hitPoint
     );
 
-    void drawBeamPath();
+    bool drawBeamPathFromEmitter(const EmitterData& emitter);
+    void drawAllBeamPaths();
 
     // collision helpers
     bool pointInsideAABB(const glm::vec3& p, const ColliderData& collider, float radius) const;
