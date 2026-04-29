@@ -145,9 +145,6 @@
     <ClInclude Include="helper\aabb.h">
       <Filter>helper</Filter>
     </ClInclude>
-    <ClInclude Include="helper\objmesh.h">
-      <Filter>helper</Filter>
-    </ClInclude>
     <ClInclude Include="helper\plane.h">
       <Filter>helper</Filter>
     </ClInclude>
@@ -165,6 +162,9 @@
     </ClInclude>
     <ClInclude Include="helper\stb\stb_easy_font.h">
       <Filter>helper\stb</Filter>
+    </ClInclude>
+    <ClInclude Include="helper\objmesh.h">
+      <Filter>helper</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

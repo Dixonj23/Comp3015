@@ -36,7 +36,7 @@ SceneBasic_Uniform::SceneBasic_Uniform()
     pitch(0.0f),
     moveSpeed(5.0f),
     mouseSensitivity(0.1f),
-    keyW(false), keyA(false), keyS(false), keyD(false),
+    keyW(false), keyA(false), keyS(false), keyD(false), keyE(false), keyQ(false),
     firstMouse(true),
     lastMouseX(0.0f),
     lastMouseY(0.0f),
@@ -56,7 +56,10 @@ SceneBasic_Uniform::SceneBasic_Uniform()
     shadowFarPlane(60.0f),
     shadowLightPos(0.0f, 3.2f, 0.0f),
     reactorWasActiveLastFrame(false),
-    reactorPulseTimer(0.0f)
+    reactorPulseTimer(0.0f),
+    reactorActiveTimer(0.0f),
+    showResetPrompt(false),
+    resetKeyHeld(false)
 {
 }
 
@@ -100,8 +103,17 @@ void SceneBasic_Uniform::initScene()
     model = mat4(1.0f);
     projection = mat4(1.0f);
 
-    planeTex = Texture::loadTexture("media/texture/brick1.jpg");
-    planeNormal = Texture::loadTexture("media/texture/ogre_normalmap.png");
+    planeTex = Texture::loadTexture("media/texture/Floor_BaseColor.png");
+    planeNormal = Texture::loadTexture("media/texture/Floor_Normal.png");
+
+    emitterTex = Texture::loadTexture("media/texture/emitter/emitter_baseColor.png");
+    mirrorTex = Texture::loadTexture("media/texture/mirror/material.png");
+    reactorTex = Texture::loadTexture("media/texture/reactor/PaintedMetal.png");
+
+    obstacleTextures.clear();
+    obstacleTextures.push_back(Texture::loadTexture("media/texture/crate/Crate_Base_Color.png"));
+    //obstacleTextures.push_back(Texture::loadTexture("media/texture/pillar_diffuse.jpg"));
+    obstacleTextures.push_back(Texture::loadTexture("media/texture/crate/Crate_Base_Color.png"));
 
     updateCameraVectors();
     view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
@@ -121,6 +133,25 @@ void SceneBasic_Uniform::initScene()
     prog.setUniform("Material.Kd", vec3(0.8f, 0.8f, 0.8f));
     prog.setUniform("Material.Ks", vec3(0.4f, 0.4f, 0.4f));
     prog.setUniform("Material.Shininess", 32.0f);
+
+    reactorModel = ObjMesh::load("media/objects/reactor.obj", true, true);
+    emitterModel = ObjMesh::load("media/objects/emitter.obj", true, true);
+    mirrorModel = ObjMesh::load("media/objects/mirror.obj", true, true);
+
+    obstacleModels.clear();
+    obstacleBaseScales.clear();
+
+    obstacleModels.push_back(ObjMesh::load("media/objects/crate.obj", true, false));
+    obstacleBaseScales.push_back(glm::vec3(0.5f));   // crate
+
+    //obstacleModels.push_back(ObjMesh::load("media/objects/pillar.obj", true, true));
+    //obstacleBaseScales.push_back(glm::vec3(0.8f, 2.5f, 0.8f)); // tall
+
+    obstacleModels.push_back(ObjMesh::load("media/objects/barrel.obj", true, false));
+    obstacleBaseScales.push_back(glm::vec3(0.08f));   // medium
+
+    //obstacleModels.push_back(ObjMesh::load("media/objects/machine_block.obj", true, true));
+    //obstacleBaseScales.push_back(glm::vec3(2.0f));   // big chunk
 
     // Corner light fixture positions
     cornerLightPositions.push_back(glm::vec3(-13.5f, 4.5f, -13.5f));
@@ -516,7 +547,10 @@ void SceneBasic_Uniform::generateObstacles(int count)
             if (glm::length(glm::vec2(pos.x, pos.z)) < 5.0f)
                 continue;
 
-            obstacles.push_back({ pos, scale });
+            int modelIndex = rand() % obstacleModels.size();
+            float angle = ((float)rand() / RAND_MAX) * 360.0f;
+
+            obstacles.push_back({ pos, scale, modelIndex, angle });
             break;
         }
     }
@@ -882,6 +916,60 @@ void SceneBasic_Uniform::drawCube(
     cube.render();
 }
 
+void SceneBasic_Uniform::drawObjModel(
+    ObjMesh* mesh,
+    const glm::vec3& position,
+    const glm::vec3& scale,
+    const glm::vec3& color,
+    float angleDegrees)
+{
+    if (!mesh) return;
+
+    prog.setUniform("UseTexture", 0);
+    prog.setUniform("SolidColor", color);
+    prog.setUniform("IsBeam", 0);
+
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, position);
+    model = glm::rotate(model, glm::radians(angleDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+    model = glm::scale(model, scale);
+
+    setMatrices();
+    mesh->render();
+}
+
+void SceneBasic_Uniform::drawTexturedModel(
+    ObjMesh* mesh,
+    GLuint texture,
+    const glm::vec3& position,
+    const glm::vec3& scale,
+    float angleDegrees)
+{
+    if (!mesh) return;
+
+    // Enable texture in shader
+    prog.setUniform("UseTexture", 1);
+    prog.setUniform("IsBeam", 0);
+    prog.setUniform("EmissiveStrength", 0.0f);
+
+    // Bind diffuse texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    // Bind a normal map (can reuse plane one for now)
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, planeNormal);
+
+    // Transform
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, position);
+    model = glm::rotate(model, glm::radians(angleDegrees), glm::vec3(0, 1, 0));
+    model = glm::scale(model, scale);
+
+    setMatrices();
+    mesh->render();
+}
+
 void SceneBasic_Uniform::drawMirror(const MirrorData& mirror, bool selected)
 {
     prog.setUniform(
@@ -1171,16 +1259,59 @@ void SceneBasic_Uniform::renderSceneGeometry()
     prog.setUniform("EmissiveStrength", 0.0f);
     for (const auto& obstacle : obstacles)
     {
-        drawCube(obstacle.pos, obstacle.scale, glm::vec3(0.25f, 0.25f, 0.30f));
+        int index = glm::clamp(
+            obstacle.modelIndex,
+            0,
+            (int)obstacleModels.size() - 1
+        );
+
+        GLuint tex = obstacleTextures[index];
+
+        glm::vec3 finalScale =
+            obstacle.scale * obstacleBaseScales[index];
+
+        drawTexturedModel(
+            obstacleModels[index].get(),
+            tex,
+            obstacle.pos,
+            finalScale,
+            obstacle.angle
+        );
     }
 
     // mirrors
     for (int i = 0; i < (int)mirrors.size(); ++i)
     {
-        drawMirror(mirrors[i], i == selectedMirrorIndex);
+        glm::vec3 mirrorColor =
+            (i == selectedMirrorIndex)
+            ? glm::vec3(1.0f, 0.9f, 0.3f)
+            : glm::vec3(0.8f, 0.8f, 0.85f);
+
+        glm::vec3 n = getMirrorNormal(mirrors[i].angle);
+        float offset = 0.11f;
+
+        // Front face
+        drawTexturedModel(
+            mirrorModel.get(),
+            mirrorTex,
+            mirrors[i].pos + n * offset,
+            glm::vec3(0.02f, 0.02f, 0.1f),
+            mirrors[i].angle
+        );
+
+        // Back face
+        drawTexturedModel(
+            mirrorModel.get(),
+            mirrorTex,
+            mirrors[i].pos - n * offset,
+            glm::vec3(0.02f, 0.02f, 0.1f),
+            mirrors[i].angle + 180.0f
+        );
+
+        //stand/collision visual
         drawCube(
-            glm::vec3(mirrors[i].pos.x, 0.5f, mirrors[i].pos.z),
-            glm::vec3(0.4f, 1.0f, 0.4f),
+            glm::vec3(mirrors[i].pos.x, 0.0f, mirrors[i].pos.z),
+            glm::vec3(0.4f, 0.5f, 0.4f),
             glm::vec3(0.3f, 0.3f, 0.35f)
         );
     }
@@ -1188,51 +1319,54 @@ void SceneBasic_Uniform::renderSceneGeometry()
     //Emitters
     for (const auto& emitter : emitters)
     {
-        glm::vec3 emitterBaseColor = glm::vec3(1.0f, 0.8f, 0.25f);
-        glm::vec3 emitterNozzleColor = glm::vec3(1.0f, 1.0f, 1.0f);
-
-        prog.setUniform("IsBeam", 0);
-        prog.setUniform("EmissiveStrength", 0.0f);
-
-        drawCube(
-            emitter.pos,
-            glm::vec3(1.5f, 2.0f, 1.5f),
-            emitterBaseColor
-        );
-
-        glm::vec3 emitterDir = getEmitterDirection(emitter.angle);
-        glm::vec3 nozzlePos =
+        glm::vec3 modelPos =
             emitter.pos +
-            glm::vec3(0.0f, 0.6f, 0.0f) +
-            emitterDir * 0.7f;
+            glm::vec3(0.0f, -0.58f, 0.0f);
 
-        prog.setUniform("UseTexture", 0);
-        prog.setUniform("SolidColor", emitterNozzleColor);
+        // Use emitter texture
+        prog.setUniform("UseTexture", 1);
         prog.setUniform("IsBeam", 0);
         prog.setUniform("EmissiveStrength", 0.0f);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, emitterTex);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, planeNormal); 
 
         model = glm::mat4(1.0f);
-        model = glm::translate(model, nozzlePos);
+        model = glm::translate(model, modelPos);
+
         model = glm::rotate(model, glm::radians(-emitter.angle), glm::vec3(0.0f, 1.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(1.0f, 0.25f, 0.25f));
+
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::rotate(model, glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+        model = glm::scale(model, glm::vec3(5.0f));
 
         setMatrices();
-        cube.render();
+        emitterModel->render();
     }
 
 
     // reactor
     prog.setUniform("IsBeam", 0);
-    prog.setUniform("EmissiveStrength", glm::mix(1.2f, 2.5f, reactorLightLevel));
+    prog.setUniform("EmissiveStrength", reactorActivated
+        ? glm::mix(1.2f, 2.5f, reactorLightLevel)
+        : 0);
 
     glm::vec3 reactorColor = reactorActivated
         ? glm::vec3(0.3f, 1.0f, 1.0f)
         : glm::vec3(0.1f, 0.1f, 0.1f);
 
-    drawCube(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(2.0f, 2.0f, 2.0f), reactorColor);
-
-    prog.setUniform("EmissiveStrength", 0.0f);
-    drawCube(glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(4.0f, 0.5f, 4.0f), glm::vec3(0.25f, 0.25f, 0.3f));
+    drawTexturedModel(
+        reactorModel.get(),
+        reactorTex,
+        glm::vec3(1.5f, 1.8f, 0.0f),
+        glm::vec3(6.0f),
+        0.0f
+    );
 
     // beams
     drawAllBeamPaths();
@@ -1287,11 +1421,39 @@ void SceneBasic_Uniform::renderHUD()
     glm::vec3 targetColor = selectedMirrorIndex >= 0 ? glm::vec3(1.0f, 1.0f, 1.0f)
             : glm::vec3(0.7f, 0.7f, 0.7f);
 
-    drawText(hudVAO, hudVBO, hudProg, targetText, 20, 90, 1.6f, targetColor, width, height);
-
     drawText(hudVAO, hudVBO, hudProg, reactorText, 20, 40, 2.0f, reactorColor, width, height);
     drawText(hudVAO, hudVBO, hudProg, targetText, 20, 520, 1.6f, targetColor, width, height);
     drawText(hudVAO, hudVBO, hudProg, controlsText, 20, 550, 1.4f, glm::vec3(0.8f, 0.8f, 0.8f), width, height);
+
+    if (showResetPrompt)
+    {
+        std::string resetText = "REACTOR STABLE - PRESS R TO RESET";
+
+        // popup box
+        std::vector<float> popupBox = {
+            -0.45f, -0.25f,   0.45f, -0.25f,
+             0.45f, -0.25f,   0.45f, -0.38f,
+             0.45f, -0.38f,  -0.45f, -0.38f,
+            -0.45f, -0.38f,  -0.45f, -0.25f
+        };
+
+        drawHUDLines(popupBox, glm::vec3(0.4f, 1.0f, 1.0f));
+
+        float pulse = 0.8f + 0.2f * sin(tPrev * 5.0f);
+
+        drawText(
+            hudVAO,
+            hudVBO,
+            hudProg,
+            resetText,
+            width * 0.5f - 150.0f,
+            height * 0.65f,
+            1.5f,
+            glm::vec3(0.4f, 1.0f, 1.0f) * pulse,
+            width,
+            height
+        );
+    }
 
     glEnable(GL_DEPTH_TEST);
 }
@@ -1354,6 +1516,19 @@ void SceneBasic_Uniform::update(float t)
     updateReactorParticles(deltaT);
 
     buildStaticColliders();
+
+    if (reactorActivated)
+    {
+        reactorActiveTimer += deltaT;
+
+        if (reactorActiveTimer >= 2.5f)
+            showResetPrompt = true;
+    }
+    else
+    {
+        reactorActiveTimer = 0.0f;
+        showResetPrompt = false;
+    }
 
     float target = reactorActivated ? 1.0f : 0.0f;
     float speed = 2.0f;
@@ -1492,7 +1667,7 @@ void SceneBasic_Uniform::render()
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // 3) blur bloom texture
+    //blur bloom texture
     bool horizontal = true;
     bool firstIteration = true;
     const unsigned int blurAmount = 10;
@@ -1515,7 +1690,7 @@ void SceneBasic_Uniform::render()
             firstIteration = false;
     }
 
-    // 4) final composite
+    //final composite
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -1568,9 +1743,17 @@ void SceneBasic_Uniform::keyInput(int key, int action)
     case GLFW_KEY_E: keyE = pressed; break;
 
     case GLFW_KEY_R:
-        if (pressed)
+        if (pressed && !resetKeyHeld)
         {
-            generateSolvableLayout(3);
+            generateSolvableLayout(2);
+            reactorActiveTimer = 0.0f;
+            showResetPrompt = false;
+
+            resetKeyHeld = true;
+        }
+        else if (!pressed)
+        {
+            resetKeyHeld = false;
         }
         break;
 

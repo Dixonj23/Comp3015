@@ -5,7 +5,9 @@
 #include "helper/glslprogram.h"
 #include "helper/plane.h"
 #include "helper/cube.h"
+#include "helper/objmesh.h"
 
+#include <memory>
 #include <vector>
 #include <array>
 #include <glm/glm.hpp>
@@ -21,6 +23,11 @@ private:
 
     Plane plane;
     Cube cube;
+
+    std::unique_ptr<ObjMesh> reactorModel;
+    std::unique_ptr<ObjMesh> emitterModel;
+    std::unique_ptr<ObjMesh> mirrorModel;
+    std::vector<std::unique_ptr<ObjMesh>> obstacleModels;
 
     GLuint planeTex = 0;
     GLuint planeNormal = 0;
@@ -64,12 +71,21 @@ private:
     {
         glm::vec3 pos;
         glm::vec3 scale;
+        int modelIndex;
+        float angle;
     };
     std::vector<ObstacleData> obstacles;
+    std::vector<glm::vec3> obstacleBaseScales;
 
     void generateObstacles(int count);
     void generateMirrors(int count);
     bool isPositionValid(const glm::vec3& pos, float radius);
+
+    //textures
+    GLuint emitterTex = 0;
+    GLuint mirrorTex = 0;
+    GLuint reactorTex = 0;
+    std::vector<GLuint> obstacleTextures;
 
     // simple colliders
     struct ColliderData
@@ -112,6 +128,11 @@ private:
     void setupHUD();
     void renderHUD();
     void drawHUDLines(const std::vector<float>& verts, const glm::vec3& color);
+
+    //reset popup
+    float reactorActiveTimer;
+    bool showResetPrompt;
+    bool resetKeyHeld;
 
     //emitter
     struct EmitterData
@@ -205,6 +226,18 @@ private:
         const glm::vec3& color
     );
 
+    void drawObjModel(
+        ObjMesh* mesh,
+        const glm::vec3& position,
+        const glm::vec3& scale,
+        const glm::vec3& color,
+        float angleDegrees = 0.0f
+    );
+
+    
+    void drawTexturedModel(ObjMesh* mesh, GLuint texture, const glm::vec3& position, const glm::vec3& scale, float angleDegrees);
+
+   
     void drawMirror(const MirrorData& mirror, bool selected);
 
     void drawBeam(
