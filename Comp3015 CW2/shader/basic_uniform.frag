@@ -7,7 +7,14 @@ in mat3 TBN;
 
 layout (binding = 0) uniform sampler2D baseTexColor1;
 layout (binding = 1) uniform sampler2D NormalMapTex;
-uniform samplerCube PointShadowMap;
+layout (binding = 2) uniform samplerCube PointShadowMap;
+
+layout (binding = 3) uniform sampler2D MetalnessTex;
+layout (binding = 4) uniform sampler2D EmissiveTex;
+
+uniform int UseMetalnessTex;
+uniform int UseEmissiveTex;
+ 
 
 layout (location = 0) out vec4 FragColor;
 layout (location = 1) out vec4 BrightColor;
@@ -98,7 +105,7 @@ float calculatePointShadow(vec3 worldPos)
     return shadow;
 }
 
-vec3 evaluateMainLight(vec3 albedo, vec3 N, vec3 fragPos, vec3 viewDir)
+vec3 evaluateMainLight(vec3 albedo, vec3 N, vec3 fragPos, vec3 viewDir, float metalness)
 {
     vec3 lightVec = Light.Position.xyz - fragPos;
     float dist = length(lightVec);
@@ -122,10 +129,12 @@ vec3 evaluateMainLight(vec3 albedo, vec3 N, vec3 fragPos, vec3 viewDir)
     float sDotN = max(dot(lightDir, N), 0.0);
     vec3 diffuse = Light.Ld * albedo * Material.Kd * sDotN * attenuation * (1.0 - shadow);
 
+
+    vec3 specColor = mix(Material.Ks, albedo, metalness);
     vec3 specular = vec3(0.0);
     if (sDotN > 0.0)
     {
-        specular = Light.Ls * Material.Ks *
+        specular = Light.Ls * specColor *
                    pow(max(dot(halfVec, N), 0.0), Material.Shininess) *
                    attenuation * (1.0 - shadow);
     }
@@ -138,7 +147,8 @@ vec3 evaluatePointLight(
     vec3 N,
     vec3 fragPos,
     vec3 viewDir,
-    PointLightInfo light
+    PointLightInfo light,
+    float metalness
 )
 {
     vec3 lightVec = light.Position.xyz - fragPos;
@@ -158,10 +168,11 @@ vec3 evaluatePointLight(
     float sDotN = max(dot(lightDir, N), 0.0);
     vec3 diffuse = light.Ld * albedo * Material.Kd * sDotN * attenuation;
 
+    vec3 specColor = mix(Material.Ks, albedo, metalness);
     vec3 specular = vec3(0.0);
     if (sDotN > 0.0)
     {
-        specular = light.Ls * Material.Ks *
+        specular = light.Ls * specColor *
                    pow(max(dot(halfVec, N), 0.0), Material.Shininess) *
                    attenuation;
     }
@@ -185,6 +196,20 @@ void main()
         albedo += vec3(0.05, 0.15, 0.25) * energy;
     }
 
+    //Metalness
+    float metalness = 0.0;
+    if (UseMetalnessTex == 1)
+    {
+        metalness = texture(MetalnessTex, TexCoord).r;
+    }
+
+    //Emissive
+    vec3 emissiveTexColor = vec3(0.0);
+    if (UseEmissiveTex == 1)
+    {
+        emissiveTexColor = texture(EmissiveTex, TexCoord).rgb;
+    }
+
     // Normal
     vec3 N;
     if (UseTexture == 1)
@@ -200,15 +225,16 @@ void main()
     vec3 viewDir = normalize(-Position);
 
     // Main reactor light + corner lights
-    vec3 litColor = evaluateMainLight(albedo, N, Position, viewDir);
+    vec3 litColor = evaluateMainLight(albedo, N, Position, viewDir, metalness);
 
     for (int i = 0; i < 4; ++i)
     {
-        litColor += evaluatePointLight(albedo, N, Position, viewDir, CornerLights[i]);
+        litColor += evaluatePointLight(albedo, N, Position, viewDir, CornerLights[i], metalness);
     }
 
     // Emissive contribution
     litColor += albedo * EmissiveStrength;
+    litColor += emissiveTexColor * EmissiveStrength;
 
     FragColor = vec4(litColor, 1.0);
 

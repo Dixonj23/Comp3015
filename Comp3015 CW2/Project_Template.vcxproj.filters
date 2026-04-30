@@ -51,20 +51,11 @@
     <ClCompile Include="helper\cube.cpp">
       <Filter>helper</Filter>
     </ClCompile>
-    <ClCompile Include="helper\skybox.cpp">
-      <Filter>helper</Filter>
-    </ClCompile>
     <ClCompile Include="helper\texture.cpp">
       <Filter>helper</Filter>
     </ClCompile>
     <ClCompile Include="helper\stb_image.cpp">
       <Filter>helper\stb</Filter>
-    </ClCompile>
-    <ClCompile Include="helper\teapot.cpp">
-      <Filter>helper</Filter>
-    </ClCompile>
-    <ClCompile Include="helper\torus.cpp">
-      <Filter>helper</Filter>
     </ClCompile>
     <ClCompile Include="helper\trianglemesh.cpp">
       <Filter>helper</Filter>
@@ -104,6 +95,7 @@
     <None Include="hud.frag">
       <Filter>shaders</Filter>
     </None>
+    <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="helper\scene.h">
@@ -130,31 +122,13 @@
     <ClInclude Include="..\..\..\Downloads\Additional files\Additional files\drawable.h">
       <Filter>helper</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\Downloads\Additional files\Additional files\teapot.h">
-      <Filter>helper</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Downloads\Additional files\Additional files\teapotdata.h">
-      <Filter>helper</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Downloads\Additional files\Additional files\torus.h">
-      <Filter>helper</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\Downloads\Additional files\Additional files\trianglemesh.h">
-      <Filter>helper</Filter>
-    </ClInclude>
-    <ClInclude Include="helper\aabb.h">
       <Filter>helper</Filter>
     </ClInclude>
     <ClInclude Include="helper\plane.h">
       <Filter>helper</Filter>
     </ClInclude>
-    <ClInclude Include="helper\utils.h">
-      <Filter>helper</Filter>
-    </ClInclude>
     <ClInclude Include="helper\cube.h">
-      <Filter>helper</Filter>
-    </ClInclude>
-    <ClInclude Include="helper\skybox.h">
       <Filter>helper</Filter>
     </ClInclude>
     <ClInclude Include="helper\texture.h">
@@ -164,6 +138,9 @@
       <Filter>helper\stb</Filter>
     </ClInclude>
     <ClInclude Include="helper\objmesh.h">
+      <Filter>helper</Filter>
+    </ClInclude>
+    <ClInclude Include="helper\aabb.h">
       <Filter>helper</Filter>
     </ClInclude>
   </ItemGroup>

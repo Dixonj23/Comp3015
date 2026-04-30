@@ -7,34 +7,94 @@
 #include "helper/cube.h"
 #include "helper/objmesh.h"
 
+#include <array>
 #include <memory>
 #include <vector>
-#include <array>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 class SceneBasic_Uniform : public Scene
 {
 private:
+    // ============================================================
+    // Shader programs
+    // ============================================================
+
     GLSLProgram prog;
     GLSLProgram blurProg;
     GLSLProgram finalProg;
     GLSLProgram pointShadowProg;
+    GLSLProgram hudProg;
+
+    // ============================================================
+    // Basic geometry
+    // ============================================================
 
     Plane plane;
     Cube cube;
+
+    // ============================================================
+    // Imported models
+    // ============================================================
 
     std::unique_ptr<ObjMesh> reactorModel;
     std::unique_ptr<ObjMesh> emitterModel;
     std::unique_ptr<ObjMesh> mirrorModel;
     std::vector<std::unique_ptr<ObjMesh>> obstacleModels;
 
+    // ============================================================
+    // Texture sets
+    // ============================================================
+
+    struct ModelTextureSet
+    {
+        GLuint diffuse = 0;
+        GLuint normal = 0;
+        GLuint metalness = 0;
+        GLuint emissive = 0;
+
+        bool hasMetalness = false;
+        bool hasEmissive = false;
+    };
+
+    ModelTextureSet emitterTextures;
+    ModelTextureSet mirrorTextures;
+    ModelTextureSet reactorTextures;
+    std::vector<ModelTextureSet> obstacleTextureSets;
+
     GLuint planeTex = 0;
     GLuint planeNormal = 0;
 
+    GLuint wallTex = 0;
+    GLuint wallNormal = 0;
+
+    GLuint ceilingTex = 0;
+    GLuint ceilingNormal = 0;
+
+    GLuint defaultBlackTex = 0;
+    GLuint defaultWhiteTex = 0;
+
+    GLuint createSolidTexture(
+        unsigned char r,
+        unsigned char g,
+        unsigned char b,
+        unsigned char a = 255
+    );
+
+    // ============================================================
+    // Room settings
+    // ============================================================
+
+    float roomSize;
+    float roomHalfSize;
+
+    // ============================================================
+    // Camera / player movement
+    // ============================================================
+
     float tPrev;
 
-    // camera / player
     glm::vec3 cameraPos;
     glm::vec3 cameraFront;
     glm::vec3 cameraUp;
@@ -46,27 +106,36 @@ private:
     float moveSpeed;
     float mouseSensitivity;
 
-    bool keyW, keyA, keyS, keyD, keyQ, keyE;
+    bool keyW;
+    bool keyA;
+    bool keyS;
+    bool keyD;
+    bool keyQ;
+    bool keyE;
+
     bool firstMouse;
     float lastMouseX;
     float lastMouseY;
 
-    //Room
+    void updateCameraVectors();
 
-    float roomSize;
-    float roomHalfSize;
+    // ============================================================
+    // Gameplay objects
+    // ============================================================
 
-    // mirrors
     struct MirrorData
     {
         glm::vec3 pos;
         float angle;
         glm::vec3 scale;
     };
-    std::vector<MirrorData> mirrors;
-    int selectedMirrorIndex;
 
-    // obstacles
+    struct EmitterData
+    {
+        glm::vec3 pos;
+        float angle;
+    };
+
     struct ObstacleData
     {
         glm::vec3 pos;
@@ -74,86 +143,30 @@ private:
         int modelIndex;
         float angle;
     };
+
+    std::vector<MirrorData> mirrors;
+    std::vector<EmitterData> emitters;
     std::vector<ObstacleData> obstacles;
+
     std::vector<glm::vec3> obstacleBaseScales;
 
-    void generateObstacles(int count);
-    void generateMirrors(int count);
-    bool isPositionValid(const glm::vec3& pos, float radius);
-
-    //textures
-    GLuint emitterTex = 0;
-    GLuint mirrorTex = 0;
-    GLuint reactorTex = 0;
-    std::vector<GLuint> obstacleTextures;
-
-    // simple colliders
-    struct ColliderData
-    {
-        glm::vec3 pos;
-        glm::vec3 scale;
-    };
-    std::vector<ColliderData> staticColliders;
-
-    // reactor/gameplay
-    bool reactorActivated;
-    float reactorLightLevel;
-
-    // corner fixtures / corner point lights
-    std::vector<glm::vec3> cornerLightPositions;
-
-    // bloom
-    GLuint hdrFBO;
-    GLuint colorBuffers[2];
-    GLuint pingpongFBO[2];
-    GLuint pingpongColorbuffers[2];
-    GLuint rboDepth;
-    GLuint quadVAO;
-    GLuint quadVBO;
-    bool bloomEnabled;
-    float bloomExposure;
-
-    // point-shadow cubemap
-    GLuint pointShadowFBO;
-    GLuint pointShadowCube;
-    float shadowFarPlane;
-    glm::vec3 shadowLightPos;
-    std::array<glm::mat4, 6> shadowTransforms;
-
-    //Hud
-    GLSLProgram hudProg;
-    GLuint hudVAO = 0;
-    GLuint hudVBO = 0;
-
-    void setupHUD();
-    void renderHUD();
-    void drawHUDLines(const std::vector<float>& verts, const glm::vec3& color);
-
-    //reset popup
-    float reactorActiveTimer;
-    bool showResetPrompt;
-    bool resetKeyHeld;
-
-    //emitter
-    struct EmitterData
-    {
-        glm::vec3 pos;
-        float angle;
-    };
-
-    std::vector<EmitterData> emitters;
+    int selectedMirrorIndex;
     int reactorBeamHits;
 
     glm::vec3 getEmitterDirection(float degrees);
+    glm::vec3 getMirrorNormal(float degrees);
 
-    //room generation
+    int findLookedAtMirror() const;
+
+    // ============================================================
+    // Procedural puzzle generation
+    // ============================================================
+
     struct BeamSegment
     {
         glm::vec3 start;
         glm::vec3 end;
     };
-
-    std::vector<BeamSegment> guaranteedPath;
 
     struct SolutionRoute
     {
@@ -167,48 +180,93 @@ private:
         float mirror2Angle;
     };
 
+    std::vector<BeamSegment> guaranteedPath;
     std::vector<SolutionRoute> solutionRoutes;
 
     glm::vec3 randomRoomPoint(float y, float margin);
+
     bool tryCreateSolutionRoute(SolutionRoute& route);
     void generateSolvableLayout(int routeCount);
-    void placeSolutionMirrors();
+    void generateMirrors(int count);
+    void generateObstacles(int count);
+
+    bool isPositionValid(const glm::vec3& pos, float radius);
     bool isNearBeamPath(const glm::vec3& pos, float radius) const;
-    float distancePointToSegmentXZ(const glm::vec3& p, const glm::vec3& a, const glm::vec3& b) const;
-    float mirrorAngleForReflection(const glm::vec3& incomingDir, const glm::vec3& outgoingDir);
+
+    float distancePointToSegmentXZ(
+        const glm::vec3& p,
+        const glm::vec3& a,
+        const glm::vec3& b
+    ) const;
+
+    float mirrorAngleForReflection(
+        const glm::vec3& incomingDir,
+        const glm::vec3& outgoingDir
+    );
+
     void placePlayerNearReactor();
 
-    // core helpers
-    void compile();
-    void setMatrices();
-    void setPointShadowMatrices();
-    void updateCameraVectors();
+    // ============================================================
+    // Collision
+    // ============================================================
 
-    // bloom helpers
-    void setupBloomBuffers();
-    void setupScreenQuad();
-    void renderQuad();
+    struct ColliderData
+    {
+        glm::vec3 pos;
+        glm::vec3 scale;
+    };
 
-    // point-shadow helpers
-    void setupPointShadowMap();
-    void buildPointShadowTransforms();
-    void renderPointShadowPass();
-    void renderShadowGeometry();
+    std::vector<ColliderData> staticColliders;
 
-    //particles
+    bool pointInsideAABB(
+        const glm::vec3& p,
+        const ColliderData& collider,
+        float radius
+    ) const;
+
+    bool pointInsideMirrorOBB(
+        const glm::vec3& p,
+        const MirrorData& mirror,
+        float radius
+    ) const;
+
+    bool pointCollidesWithScene(
+        const glm::vec3& p,
+        float radius
+    ) const;
+
+    void buildStaticColliders();
+
+    // ============================================================
+    // Reactor state
+    // ============================================================
+
+    bool reactorActivated;
+    float reactorLightLevel;
+
+    bool reactorWasActiveLastFrame;
+    float reactorPulseTimer;
+
+    float reactorActiveTimer;
+    bool showResetPrompt;
+    bool resetKeyHeld;
+
+    // ============================================================
+    // Reactor particles
+    // ============================================================
+
     struct ReactorParticle
     {
         glm::vec3 pos;
         glm::vec3 vel;
         glm::vec3 color;
+
         float life;
         float maxLife;
         float size;
     };
 
     std::vector<ReactorParticle> reactorParticles;
-    bool reactorWasActiveLastFrame;
-    float reactorPulseTimer;
 
     void initReactorParticles();
     void updateReactorParticles(float dt);
@@ -216,29 +274,91 @@ private:
     void drawReactorParticles();
     void spawnReactorBurst(int count);
 
-    // visible scene render
-    void renderSceneGeometry();
+    // ============================================================
+    // Lighting
+    // ============================================================
 
-    // draw helpers
+    std::vector<glm::vec3> cornerLightPositions;
+
+    // ============================================================
+    // Point light shadow cubemap
+    // ============================================================
+
+    GLuint pointShadowFBO;
+    GLuint pointShadowCube;
+
+    float shadowFarPlane;
+    glm::vec3 shadowLightPos;
+    std::array<glm::mat4, 6> shadowTransforms;
+
+    void setupPointShadowMap();
+    void buildPointShadowTransforms();
+    void renderPointShadowPass();
+    void renderShadowGeometry();
+    void setPointShadowMatrices();
+
+    // ============================================================
+    // Bloom / post-processing
+    // ============================================================
+
+    GLuint hdrFBO;
+    GLuint colorBuffers[2];
+    GLuint pingpongFBO[2];
+    GLuint pingpongColorbuffers[2];
+    GLuint rboDepth;
+
+    GLuint quadVAO;
+    GLuint quadVBO;
+
+    bool bloomEnabled;
+    float bloomExposure;
+
+    void setupBloomBuffers();
+    void setupScreenQuad();
+    void renderQuad();
+
+    // ============================================================
+    // HUD
+    // ============================================================
+
+    GLuint hudVAO = 0;
+    GLuint hudVBO = 0;
+
+    void setupHUD();
+    void renderHUD();
+
+    void drawHUDLines(
+        const std::vector<float>& verts,
+        const glm::vec3& color
+    );
+
+    // ============================================================
+    // Draw helpers
+    // ============================================================
+
+    void setMatrices();
+
     void drawCube(
         const glm::vec3& position,
         const glm::vec3& scale,
         const glm::vec3& color
     );
 
-    void drawObjModel(
-        ObjMesh* mesh,
+    void drawTexturedCube(
+        GLuint diffuseTex,
+        GLuint normalTex,
         const glm::vec3& position,
-        const glm::vec3& scale,
-        const glm::vec3& color,
-        float angleDegrees = 0.0f
+        const glm::vec3& scale
     );
 
-    
-    void drawTexturedModel(ObjMesh* mesh, GLuint texture, const glm::vec3& position, const glm::vec3& scale, float angleDegrees);
-
-   
-    void drawMirror(const MirrorData& mirror, bool selected);
+    void drawTexturedModel(
+        ObjMesh* mesh,
+        const ModelTextureSet& textures,
+        const glm::vec3& position,
+        const glm::vec3& scale,
+        float angleDegrees,
+        float emissiveStrength = 0.0f
+    );
 
     void drawBeam(
         const glm::vec3& start,
@@ -247,9 +367,9 @@ private:
         float thickness = 0.12f
     );
 
-    // gameplay / beam logic
-    glm::vec3 getMirrorNormal(float degrees);
-    int findLookedAtMirror() const;
+    // ============================================================
+    // Beam / mirror puzzle logic
+    // ============================================================
 
     bool rayHitsMirror(
         const glm::vec3& rayStart,
@@ -293,11 +413,12 @@ private:
     bool drawBeamPathFromEmitter(const EmitterData& emitter);
     void drawAllBeamPaths();
 
-    // collision helpers
-    bool pointInsideAABB(const glm::vec3& p, const ColliderData& collider, float radius) const;
-    bool pointInsideMirrorOBB(const glm::vec3& p, const MirrorData& mirror, float radius) const;
-    bool pointCollidesWithScene(const glm::vec3& p, float radius) const;
-    void buildStaticColliders();
+    // ============================================================
+    // Main render/setup helpers
+    // ============================================================
+
+    void compile();
+    void renderSceneGeometry();
 
 public:
     SceneBasic_Uniform();

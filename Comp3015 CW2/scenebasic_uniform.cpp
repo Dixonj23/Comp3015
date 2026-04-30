@@ -22,7 +22,7 @@ using glm::mat3;
 using glm::mat4;
 using glm::vec3;
 using glm::vec4;
-  
+
 SceneBasic_Uniform::SceneBasic_Uniform()
     : plane(50.0f, 50.0f, 1, 1),
     cube(),
@@ -63,6 +63,10 @@ SceneBasic_Uniform::SceneBasic_Uniform()
 {
 }
 
+// ============================================================
+// Construction / shader compilation / scene setup
+// ============================================================
+
 void SceneBasic_Uniform::compile()
 {
     try
@@ -100,20 +104,77 @@ void SceneBasic_Uniform::initScene()
     compile();
     glEnable(GL_DEPTH_TEST);
 
+    defaultBlackTex = createSolidTexture(0, 0, 0, 255);
+    defaultWhiteTex = createSolidTexture(255, 255, 255, 255);
+
     model = mat4(1.0f);
     projection = mat4(1.0f);
 
+    // Room textures
     planeTex = Texture::loadTexture("media/texture/Floor_BaseColor.png");
     planeNormal = Texture::loadTexture("media/texture/Floor_Normal.png");
 
-    emitterTex = Texture::loadTexture("media/texture/emitter/emitter_baseColor.png");
-    mirrorTex = Texture::loadTexture("media/texture/mirror/material.png");
-    reactorTex = Texture::loadTexture("media/texture/reactor/PaintedMetal.png");
+    wallTex = Texture::loadTexture("media/texture/8_BaseColor.png");
+    wallNormal = Texture::loadTexture("media/texture/8_Normal.png");
 
-    obstacleTextures.clear();
-    obstacleTextures.push_back(Texture::loadTexture("media/texture/crate/Crate_Base_Color.png"));
-    //obstacleTextures.push_back(Texture::loadTexture("media/texture/pillar_diffuse.jpg"));
-    obstacleTextures.push_back(Texture::loadTexture("media/texture/crate/Crate_Base_Color.png"));
+    ceilingTex = Texture::loadTexture("media/texture/10_BaseColor.png");
+    ceilingNormal = Texture::loadTexture("media/texture/10_Normal.png");
+
+    // Emitter textures
+    emitterTextures.diffuse =
+        Texture::loadTexture("media/texture/emitter/emitter_baseColor.png");
+    emitterTextures.normal =
+        Texture::loadTexture("media/texture/emitter/emitter_normal.png");
+    emitterTextures.metalness =
+        Texture::loadTexture("media/texture/emitter_metalness.jpg");
+    emitterTextures.emissive =
+        Texture::loadTexture("media/texture/emitter/emitter_emissive.png");
+    emitterTextures.hasMetalness = true;
+    emitterTextures.hasEmissive = true;
+
+    // Reactor textures
+    reactorTextures.diffuse =
+        Texture::loadTexture("media/texture/reactor/PaintedMetal.png");
+    reactorTextures.normal =
+        Texture::loadTexture("media/texture/reactor/normalMap1.png");
+    reactorTextures.metalness =
+        Texture::loadTexture("media/texture/reactor/metalnessMap1.png");
+    reactorTextures.emissive =
+        Texture::loadTexture("media/texture/reactor/bulb.png");
+    reactorTextures.hasMetalness = true;
+    reactorTextures.hasEmissive = true;
+
+    // Mirror textures
+    mirrorTextures.diffuse =
+        Texture::loadTexture("media/texture/mirror/material.png");
+    mirrorTextures.normal =
+        Texture::loadTexture("media/texture/mirror_normal.jpg");
+    mirrorTextures.metalness =
+        Texture::loadTexture("media/texture/mirror/metalnessMap1.png");
+    mirrorTextures.emissive = 0;
+    mirrorTextures.hasMetalness = true;
+    mirrorTextures.hasEmissive = false;
+
+    // Obstacle textures
+    obstacleTextureSets.clear();
+
+    ModelTextureSet crateTex;
+    crateTex.diffuse = Texture::loadTexture("media/texture/crate/Crate_Base_Color.png");
+    crateTex.normal = Texture::loadTexture("media/texture/crate/Crate_Normal_OpenGL.png");
+    crateTex.metalness = Texture::loadTexture("media/texture/crate/Crate_Metallic.png");
+    crateTex.emissive = Texture::loadTexture("media/texture/crate/Crate_Emissive.png");
+    crateTex.hasMetalness = true;
+    crateTex.hasEmissive = true;
+    obstacleTextureSets.push_back(crateTex);
+
+    ModelTextureSet barrelTex;
+    barrelTex.diffuse = Texture::loadTexture("media/texture/crate/Crate_Base_Color.png");
+    barrelTex.normal = Texture::loadTexture("media/texture/crate/Crate_Normal_OpenGL.png");
+    barrelTex.metalness = Texture::loadTexture("media/texture/crate/Crate_Metallic.png");
+    barrelTex.emissive = 0;
+    barrelTex.hasMetalness = true;
+    barrelTex.hasEmissive = false;
+    obstacleTextureSets.push_back(barrelTex);
 
     updateCameraVectors();
     view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
@@ -122,6 +183,11 @@ void SceneBasic_Uniform::initScene()
     prog.setUniform("baseTexColor1", 0);
     prog.setUniform("NormalMapTex", 1);
     prog.setUniform("PointShadowMap", 2);
+    prog.setUniform("MetalnessTex", 3);
+    prog.setUniform("EmissiveTex", 4);
+
+    prog.setUniform("UseMetalnessTex", 0);
+    prog.setUniform("UseEmissiveTex", 0);
 
     prog.setUniform("UseTexture", 1);
     prog.setUniform("SolidColor", glm::vec3(1.0f));
@@ -144,14 +210,8 @@ void SceneBasic_Uniform::initScene()
     obstacleModels.push_back(ObjMesh::load("media/objects/crate.obj", true, false));
     obstacleBaseScales.push_back(glm::vec3(0.5f));   // crate
 
-    //obstacleModels.push_back(ObjMesh::load("media/objects/pillar.obj", true, true));
-    //obstacleBaseScales.push_back(glm::vec3(0.8f, 2.5f, 0.8f)); // tall
-
     obstacleModels.push_back(ObjMesh::load("media/objects/barrel.obj", true, false));
-    obstacleBaseScales.push_back(glm::vec3(0.08f));   // medium
-
-    //obstacleModels.push_back(ObjMesh::load("media/objects/machine_block.obj", true, true));
-    //obstacleBaseScales.push_back(glm::vec3(2.0f));   // big chunk
+    obstacleBaseScales.push_back(glm::vec3(0.08f));   // big barrels
 
     // Corner light fixture positions
     cornerLightPositions.push_back(glm::vec3(-13.5f, 4.5f, -13.5f));
@@ -176,6 +236,51 @@ void SceneBasic_Uniform::initScene()
     finalProg.setUniform("bloomBlur", 1);
 }
 
+// ============================================================
+// Texture helpers
+// ============================================================
+
+GLuint SceneBasic_Uniform::createSolidTexture(
+    unsigned char r,
+    unsigned char g,
+    unsigned char b,
+    unsigned char a)
+{
+    GLuint tex = 0;
+    unsigned char data[4] = { r, g, b, a };
+
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGBA,
+        1,
+        1,
+        0,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        data
+    );
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return tex;
+}
+
+// ============================================================
+// Procedural layout generation
+// ============================================================
+
+// Attempts to create one valid 2-mirror solution route.
+// The generator rejects routes that are too short or almost straight,
+// which keeps the puzzle readable and more interesting.
 bool SceneBasic_Uniform::tryCreateSolutionRoute(SolutionRoute& route)
 {
     glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
@@ -219,6 +324,9 @@ bool SceneBasic_Uniform::tryCreateSolutionRoute(SolutionRoute& route)
     return false;
 }
 
+// Builds a complete replayable layout.
+// Guaranteed beam paths are created first, then decoy mirrors and obstacles
+// are placed while avoiding those protected beam corridors.
 void SceneBasic_Uniform::generateSolvableLayout(int routeCount)
 {
     obstacles.clear();
@@ -328,7 +436,7 @@ void SceneBasic_Uniform::generateSolvableLayout(int routeCount)
     guaranteedPath.push_back({ mirror3Pos, mirror4Pos });
     guaranteedPath.push_back({ mirror4Pos, reactorPos });
 
-    // optional extra routes 
+    //extra routes 
     for (int r = 1; r < routeCount; ++r)
     {
         SolutionRoute route;
@@ -367,15 +475,13 @@ void SceneBasic_Uniform::generateSolvableLayout(int routeCount)
     }
 
     generateMirrors(8);       // total mirrors, includes solution mirrors
-    generateObstacles(32);    // avoids guaranteedPath
+    generateObstacles(40);    // Obstacles avoid the protected beam corridors stored in guaranteedPath
 
     for (auto& m : mirrors)
     {
         float offset = -50.0f + ((float)rand() / RAND_MAX) * 100.0f;
         m.angle += offset;
     }
-
-    //emitterAngle += -45.0f + ((float)rand() / RAND_MAX) * 90.0f;
 
     buildStaticColliders();
     placePlayerNearReactor();
@@ -421,64 +527,9 @@ glm::vec3 SceneBasic_Uniform::randomRoomPoint(float y, float margin)
     return glm::vec3(x, y, z);
 }
 
-void SceneBasic_Uniform::placeSolutionMirrors()
-{
-    mirrors.clear();
-    emitters.clear();
-    guaranteedPath.clear();
-
-    glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
-
-    glm::vec3 emitter0Pos(-18.0f, 1.0f, -10.0f);
-    glm::vec3 emitter1Pos(18.0f, 1.0f, 10.0f);
-
-    glm::vec3 mirror1Pos(-8.0f, 1.5f, -10.0f);
-    glm::vec3 mirror2Pos(-8.0f, 1.5f, 6.0f);
-
-    glm::vec3 mirror3Pos(8.0f, 1.5f, 10.0f);
-    glm::vec3 mirror4Pos(8.0f, 1.5f, -6.0f);
-
-    glm::vec3 emitter0Muzzle = emitter0Pos + glm::vec3(0.0f, 0.6f, 0.0f);
-    glm::vec3 emitter1Muzzle = emitter1Pos + glm::vec3(0.0f, 0.6f, 0.0f);
-
-    // route A: emitter 0 -> mirror 1 -> mirror 2 -> reactor
-    glm::vec3 d0_a = glm::normalize(mirror1Pos - emitter0Muzzle);
-    glm::vec3 d1_a = glm::normalize(mirror2Pos - mirror1Pos);
-    glm::vec3 d2_a = glm::normalize(reactorPos - mirror2Pos);
-
-    float emitter0Angle = glm::degrees(atan2(d0_a.z, d0_a.x));
-    float mirror1Angle = mirrorAngleForReflection(d0_a, d1_a);
-    float mirror2Angle = mirrorAngleForReflection(d1_a, d2_a);
-
-    // route B: emitter 1 -> mirror 3 -> mirror 4 -> reactor
-    glm::vec3 d0_b = glm::normalize(mirror3Pos - emitter1Muzzle);
-    glm::vec3 d1_b = glm::normalize(mirror4Pos - mirror3Pos);
-    glm::vec3 d2_b = glm::normalize(reactorPos - mirror4Pos);
-
-    float emitter1Angle = glm::degrees(atan2(d0_b.z, d0_b.x));
-    float mirror3Angle = mirrorAngleForReflection(d0_b, d1_b);
-    float mirror4Angle = mirrorAngleForReflection(d1_b, d2_b);
-
-    emitters.push_back({ emitter0Pos, emitter0Angle });
-    emitters.push_back({ emitter1Pos, emitter1Angle });
-
-    mirrors.push_back({ mirror1Pos, mirror1Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
-    mirrors.push_back({ mirror2Pos, mirror2Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
-    mirrors.push_back({ mirror3Pos, mirror3Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
-    mirrors.push_back({ mirror4Pos, mirror4Angle, glm::vec3(1.5f, 3.0f, 0.2f) });
-
-    guaranteedPath.push_back({ emitter0Muzzle, mirror1Pos });
-    guaranteedPath.push_back({ mirror1Pos, mirror2Pos });
-    guaranteedPath.push_back({ mirror2Pos, reactorPos });
-
-    guaranteedPath.push_back({ emitter1Muzzle, mirror3Pos });
-    guaranteedPath.push_back({ mirror3Pos, mirror4Pos });
-    guaranteedPath.push_back({ mirror4Pos, reactorPos });
-}
-
 void SceneBasic_Uniform::generateMirrors(int count)
 {
-    // Keep the first 2 solution mirrors
+    // Keep the solution mirrors and add optional decoys
     int existing = (int)mirrors.size();
     float roomHalfSize = roomSize / 2;
 
@@ -506,7 +557,7 @@ void SceneBasic_Uniform::generateMirrors(int count)
                 pos,
                 angle,
                 glm::vec3(1.5f, 3.0f, 0.2f)
-            });
+                });
 
             break;
         }
@@ -637,6 +688,10 @@ bool SceneBasic_Uniform::isPositionValid(const glm::vec3& pos, float radius)
     return true;
 }
 
+// ============================================================
+// Reactor particles
+// ============================================================
+
 void SceneBasic_Uniform::initReactorParticles()
 {
     reactorParticles.clear();
@@ -705,6 +760,10 @@ void SceneBasic_Uniform::spawnReactorBurst(int count)
     }
 }
 
+// ============================================================
+// HUD setup and drawing
+// ============================================================
+
 void SceneBasic_Uniform::setupHUD()
 {
     glGenVertexArrays(1, &hudVAO);
@@ -719,6 +778,10 @@ void SceneBasic_Uniform::setupHUD()
 
     glBindVertexArray(0);
 }
+
+// ============================================================
+// Matrix and framebuffer setup
+// ============================================================
 
 void SceneBasic_Uniform::setMatrices()
 {
@@ -818,6 +881,10 @@ void SceneBasic_Uniform::renderQuad()
     glBindVertexArray(0);
 }
 
+// ============================================================
+// Point-light cubemap shadows
+// ============================================================
+
 void SceneBasic_Uniform::setupPointShadowMap()
 {
     const unsigned int SHADOW_SIZE = 2048;
@@ -871,6 +938,8 @@ void SceneBasic_Uniform::buildPointShadowTransforms()
     shadowTransforms[5] = shadowProj * glm::lookAt(shadowLightPos, shadowLightPos + glm::vec3(0, 0, -1), glm::vec3(0, -1, 0));
 }
 
+// Renders a depth cubemap from the reactor light position.
+// The main shader samples this cubemap to produce point-light shadows.
 void SceneBasic_Uniform::renderPointShadowPass()
 {
     const unsigned int SHADOW_SIZE = 2048;
@@ -899,6 +968,10 @@ void SceneBasic_Uniform::renderPointShadowPass()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+// ============================================================
+// Draw helpers
+// ============================================================
+
 void SceneBasic_Uniform::drawCube(
     const glm::vec3& position,
     const glm::vec3& scale,
@@ -906,6 +979,8 @@ void SceneBasic_Uniform::drawCube(
 )
 {
     prog.setUniform("UseTexture", 0);
+    prog.setUniform("UseMetalnessTex", 0);
+    prog.setUniform("UseEmissiveTex", 0);
     prog.setUniform("SolidColor", color);
 
     model = glm::mat4(1.0f);
@@ -916,18 +991,96 @@ void SceneBasic_Uniform::drawCube(
     cube.render();
 }
 
-void SceneBasic_Uniform::drawObjModel(
+void SceneBasic_Uniform::drawTexturedCube(
+    GLuint diffuseTex,
+    GLuint normalTex,
+    const glm::vec3& position,
+    const glm::vec3& scale)
+{
+    prog.setUniform("UseTexture", 1);
+    prog.setUniform("UseMetalnessTex", 0);
+    prog.setUniform("UseEmissiveTex", 0);
+    prog.setUniform("IsBeam", 0);
+    prog.setUniform("EmissiveStrength", 0.0f);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, diffuseTex != 0 ? diffuseTex : defaultWhiteTex);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, normalTex != 0 ? normalTex : planeNormal);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, pointShadowCube);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, defaultBlackTex);
+
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, defaultBlackTex);
+
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, position);
+    model = glm::scale(model, scale);
+
+    setMatrices();
+    cube.render();
+}
+
+void SceneBasic_Uniform::drawTexturedModel(
     ObjMesh* mesh,
+    const ModelTextureSet& textures,
     const glm::vec3& position,
     const glm::vec3& scale,
-    const glm::vec3& color,
-    float angleDegrees)
+    float angleDegrees,
+    float emissiveStrength)
 {
     if (!mesh) return;
 
-    prog.setUniform("UseTexture", 0);
-    prog.setUniform("SolidColor", color);
+    prog.setUniform("UseTexture", 1);
     prog.setUniform("IsBeam", 0);
+    prog.setUniform("EmissiveStrength", emissiveStrength);
+
+    // Diffuse / albedo
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(
+        GL_TEXTURE_2D,
+        textures.diffuse != 0 ? textures.diffuse : defaultWhiteTex
+    );
+
+    //Normal
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(
+        GL_TEXTURE_2D,
+        textures.normal != 0 ? textures.normal : planeNormal
+    );
+
+    // Point shadow cubemap 
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, pointShadowCube);
+
+    // Metalness
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(
+        GL_TEXTURE_2D,
+        (textures.hasMetalness && textures.metalness != 0)
+        ? textures.metalness
+        : defaultBlackTex
+    );
+    prog.setUniform("UseMetalnessTex",
+        (textures.hasMetalness && textures.metalness != 0) ? 1 : 0
+    );
+
+    //Emissive
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(
+        GL_TEXTURE_2D,
+        (textures.hasEmissive && textures.emissive != 0)
+        ? textures.emissive
+        : defaultBlackTex
+    );
+    prog.setUniform("UseEmissiveTex",
+        (textures.hasEmissive && textures.emissive != 0) ? 1 : 0
+    );
 
     model = glm::mat4(1.0f);
     model = glm::translate(model, position);
@@ -936,55 +1089,11 @@ void SceneBasic_Uniform::drawObjModel(
 
     setMatrices();
     mesh->render();
-}
 
-void SceneBasic_Uniform::drawTexturedModel(
-    ObjMesh* mesh,
-    GLuint texture,
-    const glm::vec3& position,
-    const glm::vec3& scale,
-    float angleDegrees)
-{
-    if (!mesh) return;
-
-    // Enable texture in shader
-    prog.setUniform("UseTexture", 1);
-    prog.setUniform("IsBeam", 0);
+    // Reset optional texture flags so solid-colour objects do not accidentally sample old maps.
+    prog.setUniform("UseMetalnessTex", 0);
+    prog.setUniform("UseEmissiveTex", 0);
     prog.setUniform("EmissiveStrength", 0.0f);
-
-    // Bind diffuse texture
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    // Bind a normal map (can reuse plane one for now)
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, planeNormal);
-
-    // Transform
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, position);
-    model = glm::rotate(model, glm::radians(angleDegrees), glm::vec3(0, 1, 0));
-    model = glm::scale(model, scale);
-
-    setMatrices();
-    mesh->render();
-}
-
-void SceneBasic_Uniform::drawMirror(const MirrorData& mirror, bool selected)
-{
-    prog.setUniform(
-        "SolidColor",
-        selected ? glm::vec3(1.0f, 0.9f, 0.3f) : glm::vec3(0.8f, 0.8f, 0.85f)
-    );
-    prog.setUniform("UseTexture", 0);
-
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, mirror.pos);
-    model = glm::rotate(model, glm::radians(mirror.angle), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, mirror.scale);
-
-    setMatrices();
-    cube.render();
 }
 
 void SceneBasic_Uniform::drawBeam(
@@ -1120,6 +1229,10 @@ void drawText(
     glBindVertexArray(0);
 }
 
+// ============================================================
+// Shadow and main scene rendering
+// ============================================================
+
 void SceneBasic_Uniform::renderShadowGeometry()
 {
     pointShadowProg.use();
@@ -1176,11 +1289,15 @@ void SceneBasic_Uniform::renderShadowGeometry()
         cube.render();
     }
 
-    // emitter
-    drawShadowCube(glm::vec3(-12.0f, 1.0f, 0.0f), glm::vec3(1.5f, 2.0f, 1.5f));
+    // Emitters
+    for (const auto& emitter : emitters)
+    {
+        drawShadowCube(emitter.pos, glm::vec3(1.5f, 2.0f, 1.5f));
+    }
 
-    // reactor
-    //drawShadowCube(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(2.0f, 2.0f, 2.0f));
+    // The reactor core does not cast into its own point-light shadow map.
+    // This avoids self-occlusion because the shadow light is inside/above the reactor.
+    // drawShadowCube(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(2.0f, 2.0f, 2.0f));
 
     //reactor stand
     drawShadowCube(glm::vec3(0.0f, 0.25f, 0.0f), glm::vec3(4.0f, 0.5f, 4.0f));
@@ -1227,7 +1344,7 @@ void SceneBasic_Uniform::renderSceneGeometry()
     }
     prog.setUniform("EmissiveStrength", 0.0f);
 
-    // floor
+    // Floor
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, planeTex);
 
@@ -1237,6 +1354,8 @@ void SceneBasic_Uniform::renderSceneGeometry()
     model = glm::mat4(1.0f);
     prog.setUniform("UseTexture", 1);
     prog.setUniform("IsBeam", 0);
+    prog.setUniform("UseMetalnessTex", 0);
+    prog.setUniform("UseEmissiveTex", 0);
     prog.setUniform("EmissiveStrength", 0.0f);
     setMatrices();
     plane.render();
@@ -1244,19 +1363,44 @@ void SceneBasic_Uniform::renderSceneGeometry()
     // room
     float roomHalfSize = roomSize / 2;
     float wallHeight = 5.0f;
-    glm::vec3 wallColor = glm::vec3(1.0f, 1.0f, 1.0f);
 
-    drawCube(glm::vec3(0.0f, 2.5f, -roomHalfSize), glm::vec3(roomSize, wallHeight, 0.5f), wallColor);
-    drawCube(glm::vec3(0.0f, 2.5f, roomHalfSize), glm::vec3(roomSize, wallHeight, 0.5f), wallColor);
-    drawCube(glm::vec3(-roomHalfSize, 2.5f, 0.0f), glm::vec3(0.5f, wallHeight, roomSize), wallColor);
-    drawCube(glm::vec3(roomHalfSize, 2.5f, 0.0f), glm::vec3(0.5f, wallHeight, roomSize), wallColor);
+    drawTexturedCube(
+        wallTex,
+        wallNormal,
+        glm::vec3(0.0f, wallHeight * 0.5f, -roomHalfSize),
+        glm::vec3(roomSize, wallHeight, 0.5f)
+    );
+
+    drawTexturedCube(
+        wallTex,
+        wallNormal,
+        glm::vec3(0.0f, wallHeight * 0.5f, roomHalfSize),
+        glm::vec3(roomSize, wallHeight, 0.5f)
+    );
+
+    drawTexturedCube(
+        wallTex,
+        wallNormal,
+        glm::vec3(-roomHalfSize, wallHeight * 0.5f, 0.0f),
+        glm::vec3(0.5f, wallHeight, roomSize)
+    );
+
+    drawTexturedCube(
+        wallTex,
+        wallNormal,
+        glm::vec3(roomHalfSize, wallHeight * 0.5f, 0.0f),
+        glm::vec3(0.5f, wallHeight, roomSize)
+    );
 
     //ceiling
-    drawCube(glm::vec3(0.0f, wallHeight, 0.0f), glm::vec3(roomSize, 0.5f, roomSize), glm::vec3(0.35f, 0.35f, 0.4f));
+    drawTexturedCube(
+        ceilingTex,
+        ceilingNormal,
+        glm::vec3(0.0f, wallHeight, 0.0f),
+        glm::vec3(roomSize, 0.5f, roomSize)
+    );
 
     // obstacles
-    prog.setUniform("IsBeam", 0);
-    prog.setUniform("EmissiveStrength", 0.0f);
     for (const auto& obstacle : obstacles)
     {
         int index = glm::clamp(
@@ -1265,54 +1409,59 @@ void SceneBasic_Uniform::renderSceneGeometry()
             (int)obstacleModels.size() - 1
         );
 
-        GLuint tex = obstacleTextures[index];
-
         glm::vec3 finalScale =
             obstacle.scale * obstacleBaseScales[index];
 
         drawTexturedModel(
             obstacleModels[index].get(),
-            tex,
+            obstacleTextureSets[index],
             obstacle.pos,
             finalScale,
-            obstacle.angle
+            obstacle.angle,
+            0.0f
         );
     }
 
     // mirrors
     for (int i = 0; i < (int)mirrors.size(); ++i)
     {
-        glm::vec3 mirrorColor =
-            (i == selectedMirrorIndex)
-            ? glm::vec3(1.0f, 0.9f, 0.3f)
-            : glm::vec3(0.8f, 0.8f, 0.85f);
-
         glm::vec3 n = getMirrorNormal(mirrors[i].angle);
         float offset = 0.11f;
+
+        float selectedEmissive = (i == selectedMirrorIndex) ? 0.4f : 0.0f;
 
         // Front face
         drawTexturedModel(
             mirrorModel.get(),
-            mirrorTex,
+            mirrorTextures,
             mirrors[i].pos + n * offset,
             glm::vec3(0.02f, 0.02f, 0.1f),
-            mirrors[i].angle
+            mirrors[i].angle,
+            selectedEmissive
         );
 
         // Back face
         drawTexturedModel(
             mirrorModel.get(),
-            mirrorTex,
+            mirrorTextures,
             mirrors[i].pos - n * offset,
             glm::vec3(0.02f, 0.02f, 0.1f),
-            mirrors[i].angle + 180.0f
+            mirrors[i].angle + 180.0f,
+            selectedEmissive
         );
 
-        //stand/collision visual
+        //stand/base as solid colour
+        prog.setUniform("UseTexture", 0);
+        prog.setUniform("UseMetalnessTex", 0);
+        prog.setUniform("UseEmissiveTex", 0);
+        prog.setUniform("EmissiveStrength", 0.0f);
+
         drawCube(
             glm::vec3(mirrors[i].pos.x, 0.0f, mirrors[i].pos.z),
             glm::vec3(0.4f, 0.5f, 0.4f),
-            glm::vec3(0.3f, 0.3f, 0.35f)
+            (i == selectedMirrorIndex)
+            ? glm::vec3(1.0f, 0.9f, 0.3f)
+            : glm::vec3(0.3f, 0.3f, 0.35f)
         );
     }
 
@@ -1323,49 +1472,27 @@ void SceneBasic_Uniform::renderSceneGeometry()
             emitter.pos +
             glm::vec3(0.0f, -0.58f, 0.0f);
 
-        // Use emitter texture
-        prog.setUniform("UseTexture", 1);
-        prog.setUniform("IsBeam", 0);
-        prog.setUniform("EmissiveStrength", 0.0f);
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, emitterTex);
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, planeNormal); 
-
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, modelPos);
-
-        model = glm::rotate(model, glm::radians(-emitter.angle), glm::vec3(0.0f, 1.0f, 0.0f));
-
-        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        model = glm::rotate(model, glm::radians(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-
-        model = glm::scale(model, glm::vec3(5.0f));
-
-        setMatrices();
-        emitterModel->render();
+        drawTexturedModel(
+            emitterModel.get(),
+            emitterTextures,
+            modelPos,
+            glm::vec3(5.0f),
+            -emitter.angle + 90.0f,
+            0.0f
+        );
     }
 
 
     // reactor
-    prog.setUniform("IsBeam", 0);
-    prog.setUniform("EmissiveStrength", reactorActivated
-        ? glm::mix(1.2f, 2.5f, reactorLightLevel)
-        : 0);
-
-    glm::vec3 reactorColor = reactorActivated
-        ? glm::vec3(0.3f, 1.0f, 1.0f)
-        : glm::vec3(0.1f, 0.1f, 0.1f);
+    float reactorEmissive = glm::mix(0.8f, 2.5f, reactorLightLevel);
 
     drawTexturedModel(
         reactorModel.get(),
-        reactorTex,
+        reactorTextures,
         glm::vec3(1.5f, 1.8f, 0.0f),
         glm::vec3(6.0f),
-        0.0f
+        0.0f,
+        reactorEmissive
     );
 
     // beams
@@ -1374,6 +1501,10 @@ void SceneBasic_Uniform::renderSceneGeometry()
     //particles
     drawReactorParticles();
 }
+
+// ============================================================
+// Camera, HUD, update, and input
+// ============================================================
 
 void SceneBasic_Uniform::updateCameraVectors()
 {
@@ -1412,14 +1543,14 @@ void SceneBasic_Uniform::renderHUD()
         ? "TARGET: MIRROR " + std::to_string(selectedMirrorIndex + 1)
         : "TARGET: NONE";
 
-    std::string controlsText = "Q / E - ROTATE TARGET";
+    std::string controlsText = "LOOK AT MIRROR  |  Q / E ROTATE";
 
     glm::vec3 reactorColor =
         reactorActivated ? glm::vec3(0.4f, 1.0f, 1.0f)
         : glm::vec3(1.0f, 0.3f, 0.3f);
 
     glm::vec3 targetColor = selectedMirrorIndex >= 0 ? glm::vec3(1.0f, 1.0f, 1.0f)
-            : glm::vec3(0.7f, 0.7f, 0.7f);
+        : glm::vec3(0.7f, 0.7f, 0.7f);
 
     drawText(hudVAO, hudVBO, hudProg, reactorText, 20, 40, 2.0f, reactorColor, width, height);
     drawText(hudVAO, hudVBO, hudProg, targetText, 20, 520, 1.6f, targetColor, width, height);
@@ -1481,6 +1612,8 @@ void SceneBasic_Uniform::updateReactorParticles(float dt)
     }
 }
 
+// Draws small emissive cube particles around the reactor.
+// Their colour and brightness respond to the reactor state.
 void SceneBasic_Uniform::drawReactorParticles()
 {
     prog.setUniform("UseTexture", 0);
@@ -1789,6 +1922,10 @@ void SceneBasic_Uniform::mouseInput(double x, double y)
     updateCameraVectors();
 }
 
+// ============================================================
+// Collision
+// ============================================================
+
 bool SceneBasic_Uniform::pointInsideAABB(const glm::vec3& p, const ColliderData& collider, float radius) const
 {
     glm::vec3 half = collider.scale * 0.5f;
@@ -1872,6 +2009,10 @@ void SceneBasic_Uniform::buildStaticColliders()
         staticColliders.push_back({ obstacle.pos, obstacle.scale });
     }
 }
+
+// ============================================================
+// Beam reflection puzzle logic
+// ============================================================
 
 glm::vec3 SceneBasic_Uniform::getMirrorNormal(float degrees)
 {
@@ -2080,11 +2221,13 @@ bool SceneBasic_Uniform::findClosestHitObstacle(
     return found;
 }
 
+// Traces one emitter beam through the mirror network.
+// Returns true only if this emitter reaches the reactor.
 bool SceneBasic_Uniform::drawBeamPathFromEmitter(const EmitterData& emitter)
 {
 
     glm::vec3 reactorPos(0.0f, 1.5f, 0.0f);
-    float reactorRadius = 1.5f;
+    float reactorRadius = 0.6f;
 
     float pulse = 0.75f + 0.25f * sin(tPrev * 3.0f);
     glm::vec3 beamColor = pulse * glm::vec3(0.2f, 0.9f, 1.0f);
@@ -2158,6 +2301,7 @@ bool SceneBasic_Uniform::drawBeamPathFromEmitter(const EmitterData& emitter)
     return false;
 }
 
+// Draws every emitter beam and activates the reactor only when both beams hit.
 void SceneBasic_Uniform::drawAllBeamPaths()
 {
     reactorBeamHits = 0;
