@@ -158,18 +158,18 @@
     <ClCompile Include="scenebasic_uniform.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="bloom_blur.frag" />
-    <None Include="bloom_blur.vert" />
-    <None Include="bloom_final.frag" />
-    <None Include="bloom_final.vert" />
     <None Include="hud.frag" />
     <None Include="hud.vert" />
-    <None Include="point_shadow_depth.frag" />
-    <None Include="point_shadow_depth.geom" />
-    <None Include="point_shadow_depth.vert" />
     <None Include="README.md" />
     <None Include="shader\basic_uniform.frag" />
     <None Include="shader\basic_uniform.vert" />
+    <None Include="shader\bloom_blur.frag" />
+    <None Include="shader\bloom_blur.vert" />
+    <None Include="shader\bloom_final.frag" />
+    <None Include="shader\bloom_final.vert" />
+    <None Include="shader\point_shadow_depth.frag" />
+    <None Include="shader\point_shadow_depth.geom" />
+    <None Include="shader\point_shadow_depth.vert" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\Downloads\Additional files\Additional files\drawable.h" />
